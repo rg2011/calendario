@@ -28,6 +28,19 @@ class CustomShift(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     shift_date = db.Column(db.Date, nullable=False, unique=True)
     person = db.Column(db.String(50), nullable=False)
+    note = db.Column(db.Text)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Absence(db.Model):
+    """Ausencia de una persona en un rango de fechas."""
+    __tablename__ = 'absences'
+
+    person = db.Column(db.String(50), primary_key=True)
+    start_date = db.Column(db.Date, primary_key=True)
+    end_date = db.Column(db.Date, nullable=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

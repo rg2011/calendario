@@ -14,15 +14,21 @@
     <link rel="apple-touch-icon" href="{{ url_for('secret_static', filename='icons/apple-touch-icon.png') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('secret_static', filename='style.css') }}">
+    {% block extra_head %}{% endblock %}
 </head>
 <body>
     <nav class="navbar">
         <div class="nav-container">
             <h1 class="nav-title">Calendario de Turnos</h1>
-            <ul class="nav-links">
-                <li><a href="{{ url_for('index') }}" class="nav-link">Calendario</a></li>
-                <li><a href="{{ url_for('index') }}" class="nav-link">Mes actual</a></li>
-                <li><a href="{{ url_for('settings') }}" class="nav-link">Configuración</a></li>
+            <button id="navToggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="siteNav" aria-label="Abrir menú">
+                <span class="nav-toggle-bar"></span>
+                <span class="nav-toggle-bar"></span>
+                <span class="nav-toggle-bar"></span>
+            </button>
+            <ul id="siteNav" class="nav-links">
+                <li><a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint in ['index', 'calendar_view'] %}is-active{% endif %}">Calendario</a></li>
+                <li><a href="{{ url_for('settings') }}" class="nav-link {% if request.endpoint == 'settings' %}is-active{% endif %}">Reglas</a></li>
+                <li><a href="{{ url_for('absences') }}" class="nav-link {% if request.endpoint == 'absences' %}is-active{% endif %}">Ausencias</a></li>
             </ul>
         </div>
     </nav>
@@ -30,5 +36,40 @@
     <main class="container">
         {% block content %}{% endblock %}
     </main>
+    <script>
+    (function() {
+        const navToggle = document.getElementById('navToggle');
+        const siteNav = document.getElementById('siteNav');
+        if (!navToggle || !siteNav) return;
+
+        function closeNav() {
+            navToggle.setAttribute('aria-expanded', 'false');
+            siteNav.classList.remove('is-open');
+        }
+
+        navToggle.addEventListener('click', function() {
+            const isOpen = navToggle.getAttribute('aria-expanded') === 'true';
+            navToggle.setAttribute('aria-expanded', String(!isOpen));
+            siteNav.classList.toggle('is-open', !isOpen);
+        });
+
+        siteNav.querySelectorAll('a').forEach((link) => {
+            link.addEventListener('click', closeNav);
+        });
+
+        document.addEventListener('click', function(event) {
+            if (!siteNav.classList.contains('is-open')) return;
+            if (siteNav.contains(event.target) || navToggle.contains(event.target)) return;
+            closeNav();
+        });
+
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeNav();
+            }
+        });
+    })();
+    </script>
+    {% block extra_scripts %}{% endblock %}
 </body>
 </html>

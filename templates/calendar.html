@@ -48,7 +48,7 @@
             {% for week in weeks %}
             <tr class="calendar-week">
                 {% for day in week %}
-                <td class="calendar-day {% if day.month_type == 'current' %}current-month{% else %}other-month{% endif %} {% if loop.index0 >= 5 %}weekend-day{% endif %} {% if day.is_today and day.month_type == 'current' %}today{% endif %} {% if day.is_holiday %}holiday{% endif %}"
+                <td class="calendar-day {% if day.month_type == 'current' %}current-month{% else %}other-month{% endif %} {% if loop.index0 >= 5 %}weekend-day{% endif %} {% if day.is_today and day.month_type == 'current' %}today{% endif %} {% if day.is_holiday %}holiday{% endif %} {% if not day.person %}no-rule{% endif %} {% if day.is_custom %}custom-shift{% else %}default-shift{% endif %} {% if day.person == 'Juanmi' %}person-juanmi{% elif day.person == 'Rafa' %}person-rafa{% elif day.person == 'Ana' %}person-ana{% endif %}"
                     data-date="{{ day.date.isoformat() }}"
                     {% if day.holiday_name %}title="{{ day.holiday_name }}"{% endif %}>
                     <div class="day-content">
@@ -64,10 +64,12 @@
                                 {% endif %}
                             >{{ day.day_num }}</button>
                         </div>
-                        <div class="day-person {% if not day.person %}no-rule{% endif %} {% if day.is_custom %}custom-shift{% else %}default-shift{% endif %} {% if day.person == 'Juanmi' %}person-juanmi{% elif day.person == 'Rafa' %}person-rafa{% elif day.person == 'Ana' %}person-ana{% endif %}"
+                        <div class="day-person"
                              data-date="{{ day.date.isoformat() }}"
                              data-current-person="{{ day.person or '' }}"
-                             data-default-person="{{ day.default_person or '' }}">
+                             data-default-person="{{ day.default_person or '' }}"
+                             data-note="{{ day.note or '' }}"
+                             data-absent-people='{{ day.absent_people|tojson }}'>
                             <span class="person-name person-name-full">{{ day.person or 'Vacío' }}</span>
                             <span class="person-name person-name-short">
                                 {% if day.person == 'Ana' %}A{% elif day.person == 'Juanmi' %}J{% elif day.person == 'Rafa' %}R{% else %}X{% endif %}
@@ -105,6 +107,8 @@
                 <button class="shift-option person-juanmi" data-person="Juanmi">Juanmi</button>
                 <button class="shift-option person-rafa" data-person="Rafa">Rafa</button>
                 <button class="shift-option person-ana" data-person="Ana">Ana</button>
+                <label class="shift-note-field" for="shiftNote">Anotación</label>
+                <textarea id="shiftNote" class="shift-note-input" rows="4" placeholder="Añade una anotación para este día personalizado"></textarea>
                 <button id="shiftOptionClear" class="shift-option shift-option-clear" data-person="clear">Valor por defecto</button>
             </div>
         </div>
@@ -130,12 +134,15 @@
 let currentDate = null;
 let currentPerson = null;
 let defaultPerson = null;
+let currentNote = '';
+let currentAbsentPeople = [];
 const customShiftApiUrl = {{ url_for('set_custom_shift')|tojson }};
 const modal = document.getElementById('shiftModal');
 const modalDateLabel = document.getElementById('shiftModalDate');
 const modalHintLabel = document.getElementById('shiftModalHint');
 const modalCloseButton = document.getElementById('shiftModalClose');
 const clearOptionButton = document.getElementById('shiftOptionClear');
+const shiftNoteInput = document.getElementById('shiftNote');
 const holidayModal = document.getElementById('holidayModal');
 const holidayModalDateLabel = document.getElementById('holidayModalDate');
 const holidayModalName = document.getElementById('holidayModalName');
@@ -166,7 +173,15 @@ function formatDateLabel(dateString) {
 function updateShiftModalSelection() {
     document.querySelectorAll('.shift-option').forEach((button) => {
         const isSelected = button.dataset.person === currentPerson;
+        const isUnavailable = currentAbsentPeople.includes(button.dataset.person);
         button.classList.toggle('is-selected', isSelected);
+        button.disabled = isUnavailable;
+        button.classList.toggle('is-disabled', isUnavailable);
+        if (isUnavailable) {
+            button.title = 'Persona ausente en esta fecha';
+        } else {
+            button.removeAttribute('title');
+        }
     });
 
     clearOptionButton.textContent = defaultPerson
@@ -188,12 +203,15 @@ function updateShiftModalSelection() {
     modalHintLabel.textContent = `Personalizado. Valor por defecto: ${defaultPerson || 'Vacío'}`;
 }
 
-function openShiftSelector(date, person, defaultValue) {
+function openShiftSelector(date, person, defaultValue, note, absentPeople) {
     currentDate = date;
     currentPerson = person || null;
     defaultPerson = defaultValue || null;
+    currentNote = note || '';
+    currentAbsentPeople = Array.isArray(absentPeople) ? absentPeople : [];
     modal.style.display = 'block';
     modalDateLabel.textContent = formatDateLabel(date);
+    shiftNoteInput.value = currentNote;
     updateShiftModalSelection();
 }
 
@@ -201,9 +219,12 @@ function closeShiftSelector() {
     modal.style.display = 'none';
     modalDateLabel.textContent = '';
     modalHintLabel.textContent = '';
+    shiftNoteInput.value = '';
     currentDate = null;
     currentPerson = null;
     defaultPerson = null;
+    currentNote = '';
+    currentAbsentPeople = [];
 }
 
 function openHolidayModal(date, holidayName) {
@@ -228,14 +249,18 @@ function saveShiftSelection(person) {
         },
         body: JSON.stringify({
             shift_date: currentDate,
-            person: person
+            person: person,
+            note: shiftNoteInput.value
         })
     })
     .then(response => response.json())
     .then(data => {
         if (data.success) {
             location.reload();
+            return;
         }
+
+        alert(data.error || 'Error al guardar el turno');
     })
     .catch(error => console.error('Error:', error));
 }
@@ -257,6 +282,14 @@ function navigateToSelectedMonthYear() {
     const selectedYear = Number(yearSelect.value);
     const targetUrl = calendarUrlTemplate.replace(/\/0\/0$/, `/${selectedYear}/${selectedMonth}`);
     navigateMonth(targetUrl);
+}
+
+function isInteractiveTarget(target) {
+    return Boolean(target && target.closest('textarea, input, select, button, .shift-modal-content'));
+}
+
+function isModalOpen() {
+    return modal.style.display === 'block' || holidayModal.style.display === 'block';
 }
 
 function storeSwipeStart(clientX, clientY) {
@@ -293,11 +326,22 @@ function handleSwipeEnd(clientX, clientY) {
     navigateMonth(prevMonthUrl);
 }
 
-document.querySelectorAll('.day-person').forEach((dayPerson) => {
-    dayPerson.addEventListener('click', function(event) {
+document.querySelectorAll('.calendar-day').forEach((calendarDay) => {
+    calendarDay.addEventListener('click', function(event) {
+        if (event.target.closest('.day-number')) {
+            return;
+        }
+
         event.preventDefault();
         event.stopPropagation();
-        openShiftSelector(this.dataset.date, this.dataset.currentPerson, this.dataset.defaultPerson);
+        const dayPerson = this.querySelector('.day-person');
+        openShiftSelector(
+            this.dataset.date,
+            dayPerson.dataset.currentPerson,
+            dayPerson.dataset.defaultPerson,
+            dayPerson.dataset.note,
+            JSON.parse(dayPerson.dataset.absentPeople || '[]')
+        );
     });
 });
 
@@ -341,11 +385,21 @@ document.addEventListener('keydown', function(event) {
 });
 
 swipeSurface.addEventListener('touchstart', function(event) {
+    if (isModalOpen() || isInteractiveTarget(event.target)) {
+        resetSwipeStart();
+        return;
+    }
+
     if (event.touches.length !== 1) return;
     storeSwipeStart(event.touches[0].clientX, event.touches[0].clientY);
 }, { passive: true });
 
 document.addEventListener('touchend', function(event) {
+    if (isModalOpen() || isInteractiveTarget(event.target)) {
+        resetSwipeStart();
+        return;
+    }
+
     if (event.changedTouches.length !== 1) {
         resetSwipeStart();
         return;
@@ -355,6 +409,11 @@ document.addEventListener('touchend', function(event) {
 }, { passive: true });
 
 swipeSurface.addEventListener('pointerdown', function(event) {
+    if (isModalOpen() || isInteractiveTarget(event.target)) {
+        resetSwipeStart();
+        return;
+    }
+
     if (event.button !== 0) {
         return;
     }
@@ -364,6 +423,11 @@ swipeSurface.addEventListener('pointerdown', function(event) {
 });
 
 document.addEventListener('pointerup', function(event) {
+    if (isModalOpen() || isInteractiveTarget(event.target)) {
+        resetSwipeStart();
+        return;
+    }
+
     if (event.pointerId !== swipePointerId) {
         return;
     }

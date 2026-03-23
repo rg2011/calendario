@@ -12,7 +12,7 @@ import os
 import time
 
 from dotenv import load_dotenv
-from models import db, DayWeekRule, CustomShift
+from models import db, DayWeekRule, CustomShift, Absence
 
 load_dotenv()
 
@@ -188,6 +188,15 @@ def serialize_rule(rule):
         'person_fijo': rule.person_fijo,
         'rotation_order': rule.rotation_order,
         'rotation_start_date': rule.rotation_start_date.isoformat() if rule.rotation_start_date else None,
+    }
+
+
+def serialize_absence(absence):
+    """Serializa una ausencia para respuestas JSON o plantillas."""
+    return {
+        'start_date': absence.start_date.isoformat(),
+        'end_date': absence.end_date.isoformat(),
+        'person': absence.person,
     }
 
 
@@ -385,6 +394,10 @@ def settings_cache_key():
     return 'settings'
 
 
+def absences_cache_key():
+    return 'absences'
+
+
 def holiday_refresh_worker():
     """Mantiene la caché de festivos actualizada sin bloquear peticiones."""
     retry_delay = HOLIDAY_REFRESH_INITIAL_DELAY_SECONDS
@@ -505,19 +518,67 @@ def get_month_days_full(year, month):
     return days_list
 
 
-def get_shift_for_day(shift_date):
+def get_absences_for_dates(dates_to_check):
+    """Devuelve un mapa fecha -> lista de personas ausentes para las fechas visibles."""
+    dates = list(dates_to_check)
+    if not dates:
+        return {}
+
+    min_date = min(dates)
+    max_date = max(dates)
+    absences = (
+        Absence.query
+        .filter(Absence.start_date <= max_date, Absence.end_date >= min_date)
+        .order_by(Absence.start_date, Absence.person)
+        .all()
+    )
+
+    absences_by_date = {target_date.isoformat(): [] for target_date in dates}
+    for absence in absences:
+        current = max(absence.start_date, min_date)
+        last = min(absence.end_date, max_date)
+        while current <= last:
+            people = absences_by_date.setdefault(current.isoformat(), [])
+            if absence.person not in people:
+                people.append(absence.person)
+            current += timedelta(days=1)
+
+    return absences_by_date
+
+
+def is_person_absent_on_date(person, shift_date, absent_people=None):
+    """Indica si una persona está ausente en una fecha concreta."""
+    if not person:
+        return False
+
+    if absent_people is not None:
+        return person in absent_people
+
+    return (
+        Absence.query
+        .filter_by(person=person)
+        .filter(Absence.start_date <= shift_date, Absence.end_date >= shift_date)
+        .first()
+        is not None
+    )
+
+
+def get_shift_for_day(shift_date, absent_people=None):
     """
     Obtiene el turno asignado para un día específico.
     Primero verifica si hay customización, luego aplica la regla.
-    Retorna tupla: (person, is_custom)
+    Retorna tupla: (person, is_custom, note)
     """
     # Verificar si hay turno customizado
     default_person = get_default_shift_for_day(shift_date)
+    if is_person_absent_on_date(default_person, shift_date, absent_people):
+        default_person = None
+
     custom = CustomShift.query.filter_by(shift_date=shift_date).first()
     if custom:
-        return custom.person, custom.person != default_person
+        return custom.person, True, custom.note
 
-    return default_person, False
+    return default_person, False, None
 
 
 def render_calendar(year, month):
@@ -534,6 +595,7 @@ def render_calendar(year, month):
     # Obtener días del mes
     days = get_month_days_full(year, month)
     visible_holidays = get_holidays_for_dates(day['date'] for day in days)
+    absences_by_date = get_absences_for_dates(day['date'] for day in days)
     app.logger.info(
         'Render calendario %s-%02d con %s festivos detectados en dias visibles',
         year,
@@ -543,12 +605,17 @@ def render_calendar(year, month):
     
     # Obtener turnos para cada día
     for day in days:
+        absent_people = absences_by_date.get(day['date'].isoformat(), [])
         default_person = get_default_shift_for_day(day['date'])
-        person, is_custom = get_shift_for_day(day['date'])
+        if is_person_absent_on_date(default_person, day['date'], absent_people):
+            default_person = None
+        person, is_custom, note = get_shift_for_day(day['date'], absent_people)
         holiday_info = visible_holidays.get(day['date'].isoformat())
         day['person'] = person
         day['default_person'] = default_person
         day['is_custom'] = is_custom
+        day['note'] = note
+        day['absent_people'] = absent_people
         day['is_today'] = day['date'] == today
         day['holiday_name'] = ' · '.join(holiday_info['names']) if holiday_info else None
         day['is_holiday'] = bool(holiday_info)
@@ -576,7 +643,7 @@ def render_calendar(year, month):
         'days_of_week': ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
         'prev_url': url_for('calendar_view', year=prev_year, month=prev_month),
         'next_url': url_for('calendar_view', year=next_year, month=next_month),
-        'people': PEOPLE,
+        'people': sorted(PEOPLE),
     }
     
     return render_template('calendar.html', **context)
@@ -674,14 +741,19 @@ def manage_rules():
 
 @app.route(f'/{SECRET_PATH}/api/custom-shift', methods=['POST'])
 def set_custom_shift():
-    data = request.get_json()
+    data = request.get_json() or {}
     shift_date_str = data.get('shift_date')
     person = data.get('person')
+    note = (data.get('note') or '').strip() or None
     
     if not shift_date_str or not person:
         return jsonify({'success': False, 'error': 'Invalid data'}), 400
     
     shift_date = datetime.fromisoformat(shift_date_str).date()
+    if person != 'clear' and person not in PEOPLE:
+        return jsonify({'success': False, 'error': 'Persona no válida'}), 400
+    if person != 'clear' and is_person_absent_on_date(person, shift_date):
+        return jsonify({'success': False, 'error': 'La persona está ausente en esa fecha'}), 400
     
     custom = CustomShift.query.filter_by(shift_date=shift_date).first()
     
@@ -695,10 +767,139 @@ def set_custom_shift():
             custom = CustomShift()
             custom.shift_date = shift_date
         custom.person = person
+        custom.note = note
         db.session.add(custom)
         db.session.commit()
         app_state.touch_data()
     
+    return jsonify({'success': True})
+
+
+def ensure_custom_shift_schema():
+    """Asegura columnas nuevas en SQLite sin requerir una herramienta de migraciones."""
+    inspector = db.inspect(db.engine)
+    if 'custom_shifts' not in inspector.get_table_names():
+        return
+
+    columns = {column['name'] for column in inspector.get_columns('custom_shifts')}
+    if 'note' in columns:
+        return
+
+    with db.engine.begin() as connection:
+        connection.exec_driver_sql('ALTER TABLE custom_shifts ADD COLUMN note TEXT')
+    app_state.touch_data()
+    app.logger.info('Esquema actualizado: columna custom_shifts.note añadida')
+
+
+def ensure_absence_schema():
+    """Asegura la clave primaria compuesta (person, start_date) en absences."""
+    inspector = db.inspect(db.engine)
+    if 'absences' not in inspector.get_table_names():
+        return
+
+    columns = {column['name'] for column in inspector.get_columns('absences')}
+    primary_key = inspector.get_pk_constraint('absences').get('constrained_columns') or []
+    expected_primary_key = ['person', 'start_date']
+
+    if columns >= {'person', 'start_date', 'end_date'} and primary_key == expected_primary_key:
+        return
+
+    with db.engine.begin() as connection:
+        connection.exec_driver_sql(
+            '''
+            CREATE TABLE absences_new (
+                person VARCHAR(50) NOT NULL,
+                start_date DATE NOT NULL,
+                end_date DATE NOT NULL,
+                created_at DATETIME,
+                updated_at DATETIME,
+                PRIMARY KEY (person, start_date)
+            )
+            '''
+        )
+        if 'absences' in inspector.get_table_names():
+            if 'id' in columns:
+                connection.exec_driver_sql(
+                    '''
+                    INSERT INTO absences_new (person, start_date, end_date, created_at, updated_at)
+                    SELECT person, start_date, end_date, created_at, updated_at
+                    FROM absences
+                    '''
+                )
+            else:
+                connection.exec_driver_sql(
+                    '''
+                    INSERT INTO absences_new (person, start_date, end_date, created_at, updated_at)
+                    SELECT person, start_date, end_date, created_at, updated_at
+                    FROM absences
+                    '''
+                )
+            connection.exec_driver_sql('DROP TABLE absences')
+        connection.exec_driver_sql('ALTER TABLE absences_new RENAME TO absences')
+    app_state.touch_data()
+    app.logger.info('Esquema actualizado: tabla absences migrada a clave primaria compuesta')
+
+
+@app.route(f'/{SECRET_PATH}/api/absences', methods=['GET', 'POST', 'DELETE'])
+def manage_absences():
+    if request.method == 'GET':
+        absences = Absence.query.order_by(Absence.start_date.desc(), Absence.person).all()
+        return jsonify([serialize_absence(absence) for absence in absences])
+
+    data = request.get_json() or {}
+
+    if request.method == 'DELETE':
+        person = data.get('person')
+        start_date_str = data.get('start_date')
+        if not person or not start_date_str:
+            return jsonify({'success': False, 'error': 'Datos no válidos'}), 400
+
+        start_date = datetime.fromisoformat(start_date_str).date()
+        absence = Absence.query.filter_by(person=person, start_date=start_date).first()
+        if not absence:
+            return jsonify({'success': False, 'error': 'Ausencia no encontrada'}), 404
+
+        db.session.delete(absence)
+        db.session.commit()
+        app_state.touch_data()
+        return jsonify({'success': True})
+
+    start_date_str = data.get('start_date')
+    end_date_str = data.get('end_date')
+    person = data.get('person')
+    original_person = data.get('original_person')
+    original_start_date_str = data.get('original_start_date')
+
+    if not start_date_str or not end_date_str or person not in PEOPLE:
+        return jsonify({'success': False, 'error': 'Datos no válidos'}), 400
+
+    start_date = datetime.fromisoformat(start_date_str).date()
+    end_date = datetime.fromisoformat(end_date_str).date()
+    if end_date < start_date:
+        return jsonify({'success': False, 'error': 'La fecha final no puede ser anterior a la inicial'}), 400
+
+    original_start_date = (
+        datetime.fromisoformat(original_start_date_str).date()
+        if original_start_date_str else None
+    )
+
+    if original_person and original_start_date:
+        original_absence = Absence.query.filter_by(
+            person=original_person,
+            start_date=original_start_date,
+        ).first()
+        if original_absence and (original_person != person or original_start_date != start_date):
+            db.session.delete(original_absence)
+            db.session.flush()
+
+    absence = Absence.query.filter_by(person=person, start_date=start_date).first()
+    if not absence:
+        absence = Absence(person=person, start_date=start_date)
+
+    absence.end_date = end_date
+    db.session.add(absence)
+    db.session.commit()
+    app_state.touch_data()
     return jsonify({'success': True})
 
 
@@ -714,10 +915,21 @@ def settings():
     context = {
         'days_of_week': days_of_week,
         'rules_dict': rules_dict,
-        'people': PEOPLE,
+        'people': sorted(PEOPLE),
     }
     
     return render_template('settings.html', **context)
+
+
+@app.route(f'/{SECRET_PATH}/absences')
+@app_state.cached_view(lambda: absences_cache_key(), ('data',))
+def absences():
+    absences_list = Absence.query.order_by(Absence.start_date.desc(), Absence.person).all()
+    context = {
+        'people': sorted(PEOPLE),
+        'absences': [serialize_absence(absence) for absence in absences_list],
+    }
+    return render_template('absences.html', **context)
 
 
 @app.route(f'/{SECRET_PATH}/static/<path:filename>')
@@ -728,6 +940,8 @@ def secret_static(filename):
 @app.before_request
 def create_tables():
     db.create_all()
+    ensure_custom_shift_schema()
+    ensure_absence_schema()
     ensure_holiday_refresh_worker()
 
 
@@ -743,5 +957,7 @@ if __name__ == '__main__':
     app.logger.info('Escuchando en http://%s:%s/%s', host, port, SECRET_PATH)
     with app.app_context():
         db.create_all()
+        ensure_custom_shift_schema()
+        ensure_absence_schema()
     ensure_holiday_refresh_worker()
     app.run(host=host, port=port, debug=debug)

@@ -1,11 +1,9 @@
 {% extends "base.html" %}
 
-{% block title %}Configuración de Turnos{% endblock %}
+{% block title %}Reglas de Turnos{% endblock %}
 
 {% block content %}
 <div class="settings-container">
-    <h2>Configuración de Reglas de Turnos</h2>
-
     <div class="rules-grid">
         {% for day_num in range(7) %}
         {% set day_name = days_of_week[day_num] %}

@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+
+{% block title %}Ausencias{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <div class="absence-layout">
+        <section class="rule-card absence-form-card">
+            <h3>Nueva ausencia</h3>
+            <div class="form-group">
+                <label for="absencePerson">Persona</label>
+                <select id="absencePerson">
+                    {% for person in people %}
+                    <option value="{{ person }}">{{ person }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="absenceDateRange">Periodo</label>
+                <input id="absenceDateRange" type="text" placeholder="Selecciona fecha inicial y final">
+            </div>
+            <div class="absence-form-actions">
+                <button id="absenceSaveButton" class="btn btn-save" type="button">Guardar ausencia</button>
+            </div>
+        </section>
+
+        <section class="rule-card absence-list-card">
+            <h3>Ausencias registradas</h3>
+            <div id="absenceList" class="absence-list">
+                {% for absence in absences %}
+                <article class="absence-item"
+                    data-person="{{ absence.person }}"
+                    data-start-date="{{ absence.start_date }}"
+                    data-end-date="{{ absence.end_date }}">
+                    <div class="absence-summary">
+                        <strong>{{ absence.person }}</strong>
+                        <button class="absence-dates-button" type="button">
+                            {{ absence.start_date }} → {{ absence.end_date }}
+                        </button>
+                    </div>
+                    <div class="absence-item-actions">
+                        <button class="shift-option shift-option-clear absence-delete-button" type="button">Eliminar</button>
+                    </div>
+                </article>
+                {% else %}
+                <p id="absenceEmptyState" class="absence-empty">No hay ausencias registradas.</p>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+</div>
+
+<div id="absenceEditModal" class="shift-modal">
+    <div class="shift-modal-content absence-edit-modal-content">
+        <div class="shift-modal-header">
+            <div>
+                <h3>Editar ausencia</h3>
+                <p id="absenceEditPerson" class="shift-modal-date"></p>
+            </div>
+            <button id="absenceEditClose" class="shift-modal-close" type="button">✕</button>
+        </div>
+        <div class="shift-modal-body">
+            <label class="shift-note-field" for="absenceEditRange">Periodo</label>
+            <input id="absenceEditRange" type="text" class="shift-note-input" placeholder="Selecciona fecha inicial y final">
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+<script>
+const absencesApiUrl = {{ url_for('manage_absences')|tojson }};
+const absencePersonInput = document.getElementById('absencePerson');
+const absenceDateRangeInput = document.getElementById('absenceDateRange');
+const absenceSaveButton = document.getElementById('absenceSaveButton');
+const absenceEditModal = document.getElementById('absenceEditModal');
+const absenceEditCloseButton = document.getElementById('absenceEditClose');
+const absenceEditPersonLabel = document.getElementById('absenceEditPerson');
+const absenceEditRangeInput = document.getElementById('absenceEditRange');
+let currentEditingAbsence = null;
+const absenceDateRangePicker = flatpickr(absenceDateRangeInput, {
+    mode: 'range',
+    dateFormat: 'Y-m-d',
+    locale: flatpickr.l10ns.es,
+    disableMobile: true,
+});
+
+function formatDateForApi(dateValue) {
+    const year = dateValue.getFullYear();
+    const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+    const day = String(dateValue.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+const absenceEditRangePicker = flatpickr(absenceEditRangeInput, {
+    mode: 'range',
+    dateFormat: 'Y-m-d',
+    locale: flatpickr.l10ns.es,
+    disableMobile: true,
+    clickOpens: false,
+    onClose: function(selectedDates) {
+        if (!currentEditingAbsence) {
+            return;
+        }
+
+        if (selectedDates.length !== 2) {
+            closeAbsenceEditModal();
+            return;
+        }
+
+        const [startDate, endDate] = selectedDates;
+        fetch(absencesApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                person: currentEditingAbsence.person,
+                start_date: formatDateForApi(startDate),
+                end_date: formatDateForApi(endDate),
+                original_person: currentEditingAbsence.person,
+                original_start_date: currentEditingAbsence.startDate,
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+                return;
+            }
+
+            alert(data.error || 'Error al guardar la ausencia');
+            closeAbsenceEditModal();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error al guardar la ausencia');
+            closeAbsenceEditModal();
+        });
+    }
+});
+
+function openAbsenceEditModal(article) {
+    currentEditingAbsence = {
+        person: article.dataset.person,
+        startDate: article.dataset.startDate,
+        endDate: article.dataset.endDate,
+    };
+    absenceEditPersonLabel.textContent = article.dataset.person;
+    absenceEditModal.style.display = 'block';
+    absenceEditRangePicker.setDate([article.dataset.startDate, article.dataset.endDate], false);
+    absenceEditRangePicker.open();
+}
+
+function closeAbsenceEditModal() {
+    absenceEditModal.style.display = 'none';
+    currentEditingAbsence = null;
+    absenceEditPersonLabel.textContent = '';
+    absenceEditRangePicker.clear();
+}
+
+absenceSaveButton.addEventListener('click', function() {
+    if (absenceDateRangePicker.selectedDates.length !== 2) {
+        alert('Selecciona una fecha inicial y una fecha final');
+        return;
+    }
+
+    const [startDate, endDate] = absenceDateRangePicker.selectedDates;
+
+    fetch(absencesApiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            person: absencePersonInput.value,
+            start_date: formatDateForApi(startDate),
+            end_date: formatDateForApi(endDate),
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+            return;
+        }
+
+        alert(data.error || 'Error al guardar la ausencia');
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error al guardar la ausencia');
+    });
+});
+
+document.querySelectorAll('.absence-delete-button').forEach((button) => {
+    button.addEventListener('click', function() {
+        const article = this.closest('.absence-item');
+        fetch(absencesApiUrl, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                person: article.dataset.person,
+                start_date: article.dataset.startDate
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+                return;
+            }
+
+            alert(data.error || 'Error al eliminar la ausencia');
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error al eliminar la ausencia');
+        });
+    });
+});
+
+document.querySelectorAll('.absence-dates-button').forEach((button) => {
+    button.addEventListener('click', function() {
+        openAbsenceEditModal(this.closest('.absence-item'));
+    });
+});
+
+absenceEditCloseButton.addEventListener('click', closeAbsenceEditModal);
+
+document.addEventListener('click', function(event) {
+    if (absenceEditModal.style.display === 'block' && event.target === absenceEditModal) {
+        closeAbsenceEditModal();
+    }
+});
+
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' && absenceEditModal.style.display === 'block') {
+        closeAbsenceEditModal();
+    }
+});
+</script>
+{% endblock %}
