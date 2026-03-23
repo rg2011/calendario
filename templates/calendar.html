@@ -5,12 +5,12 @@
 {% block content %}
 <div class="calendar-container">
     <div class="calendar-header">
-        <a href="{{ prev_url }}" class="btn btn-nav btn-nav-prev" aria-label="Mes anterior">
+        <a href="{{ prev_url }}" class="btn btn-nav" aria-label="Mes anterior">
             <span class="nav-label-full">← Anterior</span>
             <span class="nav-label-short" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
         </a>
         <h2 class="month-title">{{ month_name }} {{ year }}</h2>
-        <a href="{{ next_url }}" class="btn btn-nav btn-nav-next" aria-label="Mes siguiente">
+        <a href="{{ next_url }}" class="btn btn-nav" aria-label="Mes siguiente">
             <span class="nav-label-full">Siguiente →</span>
             <span class="nav-label-short" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
         </a>
@@ -34,26 +34,28 @@
                 <td class="calendar-day {% if day.month_type == 'current' %}current-month{% else %}other-month{% endif %} {% if loop.index0 >= 5 %}weekend-day{% endif %} {% if day.is_today and day.month_type == 'current' %}today{% endif %} {% if day.is_holiday %}holiday{% endif %}"
                     data-date="{{ day.date.isoformat() }}"
                     {% if day.holiday_name %}title="{{ day.holiday_name }}"{% endif %}>
-                    <div class="day-header">
-                        <button
-                            type="button"
-                            class="day-number {% if day.is_holiday %}holiday-trigger{% endif %}"
-                            {% if day.holiday_name %}
-                            data-holiday-name="{{ day.holiday_name }}"
-                            aria-label="Festivo: {{ day.holiday_name }}"
-                            {% else %}
-                            aria-label="Día {{ day.day_num }}"
-                            {% endif %}
-                        >{{ day.day_num }}</button>
-                    </div>
-                    <div class="day-person {% if not day.person %}no-rule{% endif %} {% if day.is_custom %}custom-shift{% else %}default-shift{% endif %} {% if day.person == 'Juanmi' %}person-juanmi{% elif day.person == 'Rafa' %}person-rafa{% elif day.person == 'Ana' %}person-ana{% endif %}"
-                         data-date="{{ day.date.isoformat() }}"
-                         data-current-person="{{ day.person or '' }}"
-                         data-default-person="{{ day.default_person or '' }}">
-                        <span class="person-name person-name-full">{{ day.person or 'Vacío' }}</span>
-                        <span class="person-name person-name-short">
-                            {% if day.person == 'Ana' %}A{% elif day.person == 'Juanmi' %}J{% elif day.person == 'Rafa' %}R{% else %}X{% endif %}
-                        </span>
+                    <div class="day-content">
+                        <div class="day-header">
+                            <button
+                                type="button"
+                                class="day-number {% if day.is_holiday %}holiday-trigger{% endif %}"
+                                {% if day.holiday_name %}
+                                data-holiday-name="{{ day.holiday_name }}"
+                                aria-label="Festivo: {{ day.holiday_name }}"
+                                {% else %}
+                                aria-label="Día {{ day.day_num }}"
+                                {% endif %}
+                            >{{ day.day_num }}</button>
+                        </div>
+                        <div class="day-person {% if not day.person %}no-rule{% endif %} {% if day.is_custom %}custom-shift{% else %}default-shift{% endif %} {% if day.person == 'Juanmi' %}person-juanmi{% elif day.person == 'Rafa' %}person-rafa{% elif day.person == 'Ana' %}person-ana{% endif %}"
+                             data-date="{{ day.date.isoformat() }}"
+                             data-current-person="{{ day.person or '' }}"
+                             data-default-person="{{ day.default_person or '' }}">
+                            <span class="person-name person-name-full">{{ day.person or 'Vacío' }}</span>
+                            <span class="person-name person-name-short">
+                                {% if day.person == 'Ana' %}A{% elif day.person == 'Juanmi' %}J{% elif day.person == 'Rafa' %}R{% else %}X{% endif %}
+                            </span>
+                        </div>
                     </div>
                 </td>
                 {% endfor %}
@@ -64,10 +66,7 @@
 
     <div class="legend">
         <div class="legend-item">
-            <span class="legend-box"></span> Regla por defecto
-        </div>
-        <div class="legend-item">
-            <span class="legend-box custom"></span> Turno personalizado
+            <span class="legend-box custom"></span> Personalizado
         </div>
         <div class="legend-item">
             <span class="legend-box holiday"></span> Festivo
@@ -75,7 +74,7 @@
     </div>
 
     <!-- Modal para seleccionar persona -->
-    <div id="shiftModal" class="shift-modal" style="display: none;">
+    <div id="shiftModal" class="shift-modal">
         <div class="shift-modal-content">
             <div class="shift-modal-header">
                 <div>
@@ -94,7 +93,7 @@
         </div>
     </div>
 
-    <div id="holidayModal" class="shift-modal" style="display: none;">
+    <div id="holidayModal" class="shift-modal">
         <div class="shift-modal-content holiday-modal-content">
             <div class="shift-modal-header">
                 <div>

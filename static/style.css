@@ -189,12 +189,19 @@ body {
 
 .calendar-day {
     border: 1px solid var(--grid-border);
-    padding: 0.45rem;
+    padding: 0;
     height: 92px;
     width: calc(100% / 7);
     vertical-align: top;
     transition: background-color 0.3s;
     overflow: hidden;
+}
+
+.day-content {
+    display: grid;
+    grid-template-rows: 2.2rem minmax(0, 1fr);
+    height: 100%;
+    padding: 0.35rem 0.4rem 0.4rem;
 }
 
 .calendar-day.current-month {
@@ -229,11 +236,9 @@ body {
 
 .day-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    min-height: 1.95rem;
-    margin-bottom: 0.2rem;
-    padding-bottom: 0.2rem;
+    justify-content: flex-start;
+    padding: 0;
     border-bottom: 1px solid #d8e2ee;
 }
 
@@ -241,6 +246,10 @@ body {
     appearance: none;
     border: none;
     background: transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
     font-family: inherit;
     font-weight: bold;
     font-size: 0.9rem;
@@ -248,9 +257,12 @@ body {
     letter-spacing: 0.01em;
     min-width: 1.8rem;
     height: 1.8rem;
-    padding: 0 0.45rem;
-    text-align: left;
+    width: 1.8rem;
+    padding: 0;
+    text-align: center;
     line-height: 1;
+    border-radius: 4px;
+    margin: 0;
 }
 
 .other-month .day-number {
@@ -262,29 +274,13 @@ body {
 }
 
 .calendar-day.today .day-number {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 1.8rem;
-    height: 1.8rem;
-    padding: 0 0.45rem;
-    border-radius: 999px;
     background-color: var(--header-blue);
     color: #fff;
-    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.22);
 }
 
 .calendar-day.holiday .day-number {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 1.8rem;
-    height: 1.8rem;
-    padding: 0 0.45rem;
-    border-radius: 999px;
     background-color: #ef4444;
     color: #fff;
-    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.22);
 }
 
 .day-number:focus-visible {
@@ -294,13 +290,17 @@ body {
 
 .calendar-day.today.holiday .day-number {
     background: linear-gradient(135deg, var(--header-blue) 0%, #ef4444 100%);
-    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85), 0 6px 14px rgba(37, 99, 235, 0.24);
 }
 
 .day-person {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    justify-self: stretch;
     text-align: center;
-    padding: 0.35rem 0.3rem;
-    margin: 0.2rem 0;
+    padding: 0.5rem 0.3rem;
+    margin: 0.12rem 0 0;
     border-radius: 8px;
     background-color: var(--surface-muted);
     color: var(--text-main);
@@ -549,7 +549,6 @@ body {
 
     .calendar-day {
         height: 82px;
-        padding: 0.35rem;
     }
 }
 
@@ -622,25 +621,26 @@ body {
     }
 
     .calendar-day {
-        padding: 0.2rem;
         height: 66px;
+    }
+
+    .day-content {
+        grid-template-rows: 1.75rem minmax(0, 1fr);
+        padding: 0.28rem 0.24rem 0.24rem;
     }
 
     .day-number {
         font-size: 0.78rem;
         min-width: 1.45rem;
+        width: 1.45rem;
         height: 1.45rem;
-        padding: 0 0.35rem;
-    }
-
-    .day-header {
-        min-height: 1.6rem;
     }
 
     .day-person {
-        padding: 0.25rem 0.15rem;
+        padding: 0.38rem 0.15rem;
         font-size: 0.84rem;
         border-radius: 3px;
+        margin: 0.08rem 0 0;
     }
 
     .person-name-short {
@@ -698,12 +698,17 @@ body {
 
     .calendar-day {
         height: 62px;
-        padding: 0.15rem;
+    }
+
+    .day-content {
+        grid-template-rows: 1.55rem minmax(0, 1fr);
+        padding: 0.22rem 0.18rem 0.18rem;
     }
 
     .day-person {
-        padding: 0.2rem 0.1rem;
+        padding: 0.32rem 0.1rem;
         font-size: 0.8rem;
+        margin: 0.06rem 0 0;
     }
 
     .person-name-short {
@@ -712,12 +717,8 @@ body {
 
     .day-number {
         min-width: 1.25rem;
+        width: 1.25rem;
         height: 1.25rem;
-        padding: 0 0.25rem;
-    }
-
-    .day-header {
-        min-height: 1.35rem;
     }
 }
 
@@ -741,9 +742,9 @@ body {
 /* Legend */
 .legend {
     display: flex;
-    gap: 2rem;
+    gap: 1.5rem;
     justify-content: center;
-    padding: 1rem;
+    padding: 0.85rem 1rem;
     background-color: var(--surface-muted);
     border-radius: 8px;
     border: 1px solid #dfe7f1;
@@ -761,9 +762,7 @@ body {
     display: inline-block;
     width: 20px;
     height: 20px;
-    background-color: var(--surface-alt);
     border-radius: 4px;
-    border: 1px solid var(--default-border);
 }
 
 .legend-box.custom {
@@ -946,14 +945,17 @@ body {
         box-shadow: inset 0 0 0 2px rgba(96, 165, 250, 0.32);
     }
 
+    .calendar-day.today .day-number {
+        background-color: #3b82f6;
+        color: #eff6ff;
+    }
+
     .calendar-day.holiday .day-number {
         background-color: #f87171;
-        box-shadow: 0 4px 12px rgba(248, 113, 113, 0.2);
     }
 
     .calendar-day.today.holiday .day-number {
         background: linear-gradient(135deg, #60a5fa 0%, #f87171 100%);
-        box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.9), 0 6px 14px rgba(96, 165, 250, 0.22);
     }
 
     .day-header {
