@@ -242,6 +242,28 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now calendario.service
 ```
 
+## Despliegue con systemd sin Quadlet
+
+Si prefieres no usar Quadlet, puedes copiar [`calendario.service`](/mnt/wsl/tank/projects/calendario/calendario.service) a:
+
+```text
+/etc/systemd/system/calendario.service
+```
+
+Ese servicio:
+
+- ejecuta la app directamente desde `/opt/calendario`
+- usa `uid 1000` y `gid 1000`
+- arranca con `uv run python app.py`
+- lee variables desde `/opt/calendario/.env`
+
+Activación:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now calendario.service
+```
+
 ## Fuente de festivos
 
 - API oficial de la Junta de Andalucía:
