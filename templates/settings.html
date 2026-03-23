@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Configuración de Turnos{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <h2>Configuración de Reglas de Turnos</h2>
+
+    <div class="rules-grid">
+        {% for day_num in range(7) %}
+        {% set day_name = days_of_week[day_num] %}
+        {% set rule = rules_dict.get(day_num) %}
+        {% set rotation_order = rule.rotation_order.split(',') if rule and rule.rotation_order else people %}
+        
+        <div class="rule-card">
+            <h3>{{ day_name }}</h3>
+            
+            <div class="form-group">
+                <label>Algoritmo:</label>
+                <select id="algo_{{ day_num }}" onchange="updateAlgorithm({{ day_num }})">
+                    <option value="">Seleccionar...</option>
+                    <option value="fijo" {% if rule and rule.algorithm == 'fijo' %}selected{% endif %}>Fijo</option>
+                    <option value="rotatorio" {% if rule and rule.algorithm == 'rotatorio' %}selected{% endif %}>Rotatorio</option>
+                </select>
+            </div>
+
+            <div id="fijo_{{ day_num }}" class="algo-section" style="display: {% if rule and rule.algorithm == 'fijo' %}block{% else %}none{% endif %};">
+                <div class="form-group">
+                    <label>Persona por defecto:</label>
+                    <select id="person_{{ day_num }}">
+                        <option value="">Seleccionar...</option>
+                        {% for person in people %}
+                        <option value="{{ person }}" {% if rule and rule.person_fijo == person %}selected{% endif %}>{{ person }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button class="btn btn-save" onclick="saveRule({{ day_num }}, 'fijo')">Guardar Regla</button>
+            </div>
+
+            <div id="rotatorio_{{ day_num }}" class="algo-section" style="display: {% if rule and rule.algorithm == 'rotatorio' %}block{% else %}none{% endif %};">
+                <div class="form-group">
+                    <label>Orden de rotación:</label>
+                    <div class="rotation-order-picker">
+                        <select id="rot_1_{{ day_num }}">
+                            {% for person in people %}
+                            <option value="{{ person }}" 
+                                {% if rotation_order[0].strip() == person %}selected{% endif %}>
+                                {{ person }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <select id="rot_2_{{ day_num }}">
+                            {% for person in people %}
+                            <option value="{{ person }}"
+                                {% if rotation_order[1].strip() == person %}selected{% endif %}>
+                                {{ person }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <select id="rot_3_{{ day_num }}">
+                            {% for person in people %}
+                            <option value="{{ person }}"
+                                {% if rotation_order[2].strip() == person %}selected{% endif %}>
+                                {{ person }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Fecha de inicio de rotación:</label>
+                    <input type="date" id="rot_date_{{ day_num }}" lang="es-ES"
+                           value="{% if rule and rule.rotation_start_date %}{{ rule.rotation_start_date }}{% else %}2026-03-23{% endif %}">
+                </div>
+
+                <button class="btn btn-save" onclick="saveRule({{ day_num }}, 'rotatorio')">Guardar Regla</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+const rulesApiUrl = {{ url_for('manage_rules')|tojson }};
+
+function updateAlgorithm(dayNum) {
+    const algo = document.getElementById(`algo_${dayNum}`).value;
+    document.getElementById(`fijo_${dayNum}`).style.display = algo === 'fijo' ? 'block' : 'none';
+    document.getElementById(`rotatorio_${dayNum}`).style.display = algo === 'rotatorio' ? 'block' : 'none';
+}
+
+function saveRule(dayNum, algorithm) {
+    let data = {
+        day_of_week: dayNum,
+        algorithm: algorithm
+    };
+
+    if (algorithm === 'fijo') {
+        data.person_fijo = document.getElementById(`person_${dayNum}`).value;
+    } else if (algorithm === 'rotatorio') {
+        const rot1 = document.getElementById(`rot_1_${dayNum}`).value;
+        const rot2 = document.getElementById(`rot_2_${dayNum}`).value;
+        const rot3 = document.getElementById(`rot_3_${dayNum}`).value;
+        data.rotation_order = `${rot1},${rot2},${rot3}`;
+        data.rotation_start_date = document.getElementById(`rot_date_${dayNum}`).value;
+    }
+
+    fetch(rulesApiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Regla guardada correctamente');
+            location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error al guardar la regla');
+    });
+}
+</script>
+{% endblock %}

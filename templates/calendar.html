@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+
+{% block title %}Calendario - {{ month_name }} {{ year }}{% endblock %}
+
+{% block content %}
+<div class="calendar-container">
+    <div class="calendar-header">
+        <a href="{{ prev_url }}" class="btn btn-nav btn-nav-prev" aria-label="Mes anterior">
+            <span class="nav-label-full">← Anterior</span>
+            <span class="nav-label-short" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
+        </a>
+        <h2 class="month-title">{{ month_name }} {{ year }}</h2>
+        <a href="{{ next_url }}" class="btn btn-nav btn-nav-next" aria-label="Mes siguiente">
+            <span class="nav-label-full">Siguiente →</span>
+            <span class="nav-label-short" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
+        </a>
+    </div>
+
+    <table class="calendar-table">
+        <thead>
+            <tr>
+                {% for day_name in days_of_week %}
+                <th>
+                    <span class="day-name-full">{{ day_name }}</span>
+                    <span class="day-name-short">{{ day_name[0] if day_name != 'Mié' else 'X' }}</span>
+                </th>
+                {% endfor %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for week in weeks %}
+            <tr class="calendar-week">
+                {% for day in week %}
+                <td class="calendar-day {% if day.month_type == 'current' %}current-month{% else %}other-month{% endif %} {% if loop.index0 >= 5 %}weekend-day{% endif %} {% if day.is_today and day.month_type == 'current' %}today{% endif %} {% if day.is_holiday %}holiday{% endif %}"
+                    data-date="{{ day.date.isoformat() }}"
+                    {% if day.holiday_name %}title="{{ day.holiday_name }}"{% endif %}>
+                    <div class="day-header">
+                        <button
+                            type="button"
+                            class="day-number {% if day.is_holiday %}holiday-trigger{% endif %}"
+                            {% if day.holiday_name %}
+                            data-holiday-name="{{ day.holiday_name }}"
+                            aria-label="Festivo: {{ day.holiday_name }}"
+                            {% else %}
+                            aria-label="Día {{ day.day_num }}"
+                            {% endif %}
+                        >{{ day.day_num }}</button>
+                    </div>
+                    <div class="day-person {% if not day.person %}no-rule{% endif %} {% if day.is_custom %}custom-shift{% else %}default-shift{% endif %} {% if day.person == 'Juanmi' %}person-juanmi{% elif day.person == 'Rafa' %}person-rafa{% elif day.person == 'Ana' %}person-ana{% endif %}"
+                         data-date="{{ day.date.isoformat() }}"
+                         data-current-person="{{ day.person or '' }}"
+                         data-default-person="{{ day.default_person or '' }}">
+                        <span class="person-name person-name-full">{{ day.person or 'Vacío' }}</span>
+                        <span class="person-name person-name-short">
+                            {% if day.person == 'Ana' %}A{% elif day.person == 'Juanmi' %}J{% elif day.person == 'Rafa' %}R{% else %}X{% endif %}
+                        </span>
+                    </div>
+                </td>
+                {% endfor %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="legend">
+        <div class="legend-item">
+            <span class="legend-box"></span> Regla por defecto
+        </div>
+        <div class="legend-item">
+            <span class="legend-box custom"></span> Turno personalizado
+        </div>
+        <div class="legend-item">
+            <span class="legend-box holiday"></span> Festivo
+        </div>
+    </div>
+
+    <!-- Modal para seleccionar persona -->
+    <div id="shiftModal" class="shift-modal" style="display: none;">
+        <div class="shift-modal-content">
+            <div class="shift-modal-header">
+                <div>
+                    <h3>Seleccionar persona</h3>
+                    <p id="shiftModalDate" class="shift-modal-date"></p>
+                    <p id="shiftModalHint" class="shift-modal-hint"></p>
+                </div>
+                <button id="shiftModalClose" class="shift-modal-close" type="button">✕</button>
+            </div>
+            <div class="shift-modal-body">
+                <button class="shift-option person-juanmi" data-person="Juanmi">Juanmi</button>
+                <button class="shift-option person-rafa" data-person="Rafa">Rafa</button>
+                <button class="shift-option person-ana" data-person="Ana">Ana</button>
+                <button id="shiftOptionClear" class="shift-option shift-option-clear" data-person="clear">Valor por defecto</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="holidayModal" class="shift-modal" style="display: none;">
+        <div class="shift-modal-content holiday-modal-content">
+            <div class="shift-modal-header">
+                <div>
+                    <h3>Festivo</h3>
+                    <p id="holidayModalDate" class="shift-modal-date"></p>
+                </div>
+                <button id="holidayModalClose" class="shift-modal-close" type="button">✕</button>
+            </div>
+            <div class="shift-modal-body">
+                <p id="holidayModalName" class="holiday-modal-name"></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentDate = null;
+let currentPerson = null;
+let defaultPerson = null;
+const customShiftApiUrl = {{ url_for('set_custom_shift')|tojson }};
+const modal = document.getElementById('shiftModal');
+const modalDateLabel = document.getElementById('shiftModalDate');
+const modalHintLabel = document.getElementById('shiftModalHint');
+const modalCloseButton = document.getElementById('shiftModalClose');
+const clearOptionButton = document.getElementById('shiftOptionClear');
+const holidayModal = document.getElementById('holidayModal');
+const holidayModalDateLabel = document.getElementById('holidayModalDate');
+const holidayModalName = document.getElementById('holidayModalName');
+const holidayModalCloseButton = document.getElementById('holidayModalClose');
+
+function formatDateLabel(dateString) {
+    const [year, month, day] = dateString.split('-').map(Number);
+    const formattedDate = new Date(year, month - 1, day);
+
+    return formattedDate.toLocaleDateString('es-ES', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
+}
+
+function updateShiftModalSelection() {
+    document.querySelectorAll('.shift-option').forEach((button) => {
+        const isSelected = button.dataset.person === currentPerson;
+        button.classList.toggle('is-selected', isSelected);
+    });
+
+    clearOptionButton.textContent = defaultPerson
+        ? `Valor por defecto: ${defaultPerson}`
+        : 'Valor por defecto: Sin regla';
+
+    if (!currentPerson) {
+        modalHintLabel.textContent = defaultPerson
+            ? `Sin personalización. Valor por defecto: ${defaultPerson}`
+            : 'Sin personalización ni regla por defecto';
+        return;
+    }
+
+    if (currentPerson === defaultPerson) {
+        modalHintLabel.textContent = `Valor por defecto actual: ${defaultPerson}`;
+        return;
+    }
+
+    modalHintLabel.textContent = `Personalizado. Valor por defecto: ${defaultPerson || 'Vacío'}`;
+}
+
+function openShiftSelector(date, person, defaultValue) {
+    currentDate = date;
+    currentPerson = person || null;
+    defaultPerson = defaultValue || null;
+    modal.style.display = 'block';
+    modalDateLabel.textContent = formatDateLabel(date);
+    updateShiftModalSelection();
+}
+
+function closeShiftSelector() {
+    modal.style.display = 'none';
+    modalDateLabel.textContent = '';
+    modalHintLabel.textContent = '';
+    currentDate = null;
+    currentPerson = null;
+    defaultPerson = null;
+}
+
+function openHolidayModal(date, holidayName) {
+    holidayModal.style.display = 'block';
+    holidayModalDateLabel.textContent = formatDateLabel(date);
+    holidayModalName.textContent = holidayName;
+}
+
+function closeHolidayModal() {
+    holidayModal.style.display = 'none';
+    holidayModalDateLabel.textContent = '';
+    holidayModalName.textContent = '';
+}
+
+function saveShiftSelection(person) {
+    if (!currentDate) return;
+
+    fetch(customShiftApiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            shift_date: currentDate,
+            person: person
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+document.querySelectorAll('.day-person').forEach((dayPerson) => {
+    dayPerson.addEventListener('click', function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openShiftSelector(this.dataset.date, this.dataset.currentPerson, this.dataset.defaultPerson);
+    });
+});
+
+document.querySelectorAll('.holiday-trigger').forEach((trigger) => {
+    trigger.addEventListener('click', function(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openHolidayModal(this.closest('.calendar-day').dataset.date, this.dataset.holidayName);
+    });
+});
+
+document.querySelectorAll('.shift-option').forEach((button) => {
+    button.addEventListener('click', function() {
+        saveShiftSelection(this.dataset.person);
+    });
+});
+
+modalCloseButton.addEventListener('click', closeShiftSelector);
+holidayModalCloseButton.addEventListener('click', closeHolidayModal);
+
+// Cerrar modal al hacer click fuera
+document.addEventListener('click', function(event) {
+    if (modal.style.display === 'block' && event.target === modal) {
+        closeShiftSelector();
+    }
+    if (holidayModal.style.display === 'block' && event.target === holidayModal) {
+        closeHolidayModal();
+    }
+});
+
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' && modal.style.display === 'block') {
+        closeShiftSelector();
+    }
+    if (event.key === 'Escape' && holidayModal.style.display === 'block') {
+        closeHolidayModal();
+    }
+});
+</script>
+{% endblock %}

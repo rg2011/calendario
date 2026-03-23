@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es-ES">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <title>{% block title %}Calendario de Turnos{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="{{ url_for('secret_static', filename='style.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <h1 class="nav-title">Calendario de Turnos</h1>
+            <ul class="nav-links">
+                <li><a href="{{ url_for('index') }}" class="nav-link">Calendario</a></li>
+                <li><a href="{{ url_for('index') }}" class="nav-link">Mes actual</a></li>
+                <li><a href="{{ url_for('settings') }}" class="nav-link">Configuración</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <p>&copy; 2026 Calendario de Turnos. Todos los derechos reservados.</p>
+    </footer>
+</body>
+</html>
