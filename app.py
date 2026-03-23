@@ -571,6 +571,7 @@ def render_calendar(year, month):
         'month_name': month_name,
         'month_options': month_options,
         'year_options': year_options,
+        'holiday_reference_year': current_year,
         'weeks': weeks,
         'days_of_week': ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
         'prev_url': url_for('calendar_view', year=prev_year, month=prev_month),
