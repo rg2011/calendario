@@ -558,11 +558,19 @@ def render_calendar(year, month):
     
     # Información del mes
     month_name = MONTH_NAMES_ES[month]
-    
+    month_options = [
+        {'value': month_number, 'label': MONTH_NAMES_ES[month_number]}
+        for month_number in range(1, 13)
+    ]
+    current_year = today.year
+    year_options = sorted({current_year - 1, current_year, current_year + 1, year})
+
     context = {
         'year': year,
         'month': month,
         'month_name': month_name,
+        'month_options': month_options,
+        'year_options': year_options,
         'weeks': weeks,
         'days_of_week': ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
         'prev_url': url_for('calendar_view', year=prev_year, month=prev_month),

@@ -9,7 +9,24 @@
             <span class="nav-label-full">← Anterior</span>
             <span class="nav-label-short" aria-hidden="true"><i class="fa-solid fa-chevron-left"></i></span>
         </a>
-        <h2 class="month-title">{{ month_name }} {{ year }}</h2>
+        <div class="month-title month-selector-group" aria-label="Seleccionar mes y año">
+            <label class="month-selector-label" for="monthSelect">Mes</label>
+            <select id="monthSelect" class="month-selector" aria-label="Seleccionar mes">
+                {% for month_option in month_options %}
+                <option value="{{ month_option.value }}" {% if month_option.value == month %}selected{% endif %}>
+                    {{ month_option.label }}
+                </option>
+                {% endfor %}
+            </select>
+            <label class="month-selector-label" for="yearSelect">Año</label>
+            <select id="yearSelect" class="month-selector year-selector" aria-label="Seleccionar año">
+                {% for year_option in year_options %}
+                <option value="{{ year_option }}" {% if year_option == year %}selected{% endif %}>
+                    {{ year_option }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
         <a href="{{ next_url }}" class="btn btn-nav" aria-label="Mes siguiente">
             <span class="nav-label-full">Siguiente →</span>
             <span class="nav-label-short" aria-hidden="true"><i class="fa-solid fa-chevron-right"></i></span>
@@ -125,6 +142,9 @@ const holidayModalName = document.getElementById('holidayModalName');
 const holidayModalCloseButton = document.getElementById('holidayModalClose');
 const prevMonthUrl = {{ prev_url|tojson }};
 const nextMonthUrl = {{ next_url|tojson }};
+const calendarUrlTemplate = {{ url_for('calendar_view', year=0, month=0)|tojson }};
+const monthSelect = document.getElementById('monthSelect');
+const yearSelect = document.getElementById('yearSelect');
 const swipeSurface = document.body;
 const swipeThreshold = 60;
 let swipeStartX = null;
@@ -228,6 +248,17 @@ function navigateMonth(url) {
     window.location.href = url;
 }
 
+function navigateToSelectedMonthYear() {
+    if (!monthSelect || !yearSelect) {
+        return;
+    }
+
+    const selectedMonth = Number(monthSelect.value);
+    const selectedYear = Number(yearSelect.value);
+    const targetUrl = calendarUrlTemplate.replace(/\/0\/0$/, `/${selectedYear}/${selectedMonth}`);
+    navigateMonth(targetUrl);
+}
+
 function storeSwipeStart(clientX, clientY) {
     swipeStartX = clientX;
     swipeStartY = clientY;
@@ -283,6 +314,9 @@ document.querySelectorAll('.shift-option').forEach((button) => {
         saveShiftSelection(this.dataset.person);
     });
 });
+
+monthSelect.addEventListener('change', navigateToSelectedMonthYear);
+yearSelect.addEventListener('change', navigateToSelectedMonthYear);
 
 modalCloseButton.addEventListener('click', closeShiftSelector);
 holidayModalCloseButton.addEventListener('click', closeHolidayModal);
