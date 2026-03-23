@@ -22,6 +22,7 @@ Aplicación web en Flask + SQLite para gestionar un calendario mensual de turnos
   - días sin regla
 - Consulta los festivos oficiales de Sevilla mediante la API pública de la Junta de Andalucía.
 - Usa caché en memoria para no repetir la consulta de festivos durante la vida del proceso.
+- Expone `ETag` y `Last-Modified` en las vistas HTML principales para que el navegador revalide y reutilice su caché.
 - Adapta la UI a móvil, incluyendo abreviaturas y modales táctiles.
 
 ## Cómo funciona la asignación
@@ -60,6 +61,7 @@ Notas:
 - la caché es solo en memoria
 - al arrancar la app, intenta precargar el año actual completo y materializa la caché mensual para evitar la latencia de la primera petición
 - al reiniciar la app, la caché se reconstruye
+- la versión usada para `ETag`/`Last-Modified` también vive en memoria y se reinicia al arrancar
 - los festivos locales pueden venir con descripciones genéricas del tipo `FIESTA LOCAL EN SEVILLA (SEVILLA)`
 
 ## Seguridad por URL secreta

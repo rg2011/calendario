@@ -1,7 +1,9 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory
-from datetime import datetime, timedelta, date
+from flask import Flask, render_template, request, url_for, jsonify, send_from_directory, make_response
+from datetime import datetime, timedelta, date, timezone
 from urllib.parse import urlencode
 from urllib.request import urlopen
+from functools import wraps
+from hashlib import sha256
 import calendar
 import json
 import logging
@@ -36,6 +38,82 @@ MONTH_NAMES_ES = {
     1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
     7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
 }
+
+
+class AppState:
+    """Mantiene versiones en memoria para revalidación HTTP condicional."""
+
+    def __init__(self):
+        boot_time = self._now()
+        self._versions = {
+            'app': boot_time,
+            'data': boot_time,
+            'holidays': boot_time,
+        }
+
+    def _now(self):
+        return datetime.now(timezone.utc)
+
+    def touch(self, *names):
+        current_time = self._now()
+        for name in names:
+            self._versions[name] = current_time
+
+    def touch_data(self):
+        self.touch('data')
+
+    def touch_holidays(self):
+        self.touch('holidays')
+
+    def last_modified(self, *names):
+        version_names = names or ('app',)
+        return max(self._versions[name] for name in version_names)
+
+    def etag_for(self, resource_key, *names):
+        payload = [str(resource_key)]
+        for name in names:
+            payload.append(f'{name}={self._versions[name].isoformat(timespec="microseconds")}')
+        digest = sha256('|'.join(payload).encode('utf-8')).hexdigest()
+        return f'calendario-{digest}'
+
+    def is_not_modified(self, etag, last_modified):
+        if_none_match = request.headers.get('If-None-Match')
+        if if_none_match:
+            candidate_tags = {item.strip() for item in if_none_match.split(',') if item.strip()}
+            return '*' in candidate_tags or etag in candidate_tags or f'"{etag}"' in candidate_tags
+
+        if_modified_since = request.if_modified_since
+        if if_modified_since is not None:
+            last_modified_utc = last_modified.astimezone(timezone.utc).replace(microsecond=0)
+            if if_modified_since >= last_modified_utc:
+                return True
+
+        return False
+
+    def cached_view(self, resource_builder, version_names, cache_control='private, no-cache'):
+        def decorator(view_func):
+            @wraps(view_func)
+            def wrapped(*args, **kwargs):
+                resource_key = resource_builder(*args, **kwargs)
+                last_modified = self.last_modified(*version_names)
+                etag = self.etag_for(resource_key, *version_names)
+
+                if self.is_not_modified(etag, last_modified):
+                    response = make_response('', 304)
+                else:
+                    response = make_response(view_func(*args, **kwargs))
+
+                response.set_etag(etag)
+                response.last_modified = last_modified
+                response.headers['Cache-Control'] = cache_control
+                return response
+
+            return wrapped
+
+        return decorator
+
+
+app_state = AppState()
 
 
 def get_week_start(target_date):
@@ -234,6 +312,19 @@ def build_month_holiday_cache(year, year_holidays):
     return monthly_cache
 
 
+def calendar_cache_key(year, month):
+    return f'calendar:{year:04d}-{month:02d}'
+
+
+def current_month_cache_key():
+    today = date.today()
+    return calendar_cache_key(today.year, today.month)
+
+
+def settings_cache_key():
+    return 'settings'
+
+
 def warm_holiday_cache_for_year(year):
     """
     Precarga la caché anual y mensual para evitar latencia en la primera petición.
@@ -252,10 +343,12 @@ def warm_holiday_cache_for_year(year):
             app.logger.warning('No se pudo precargar la caché anual de festivos para %s', year)
             return
         holiday_cache[year_cache_key] = year_holidays
+        app_state.touch_holidays()
     else:
         app.logger.info('La caché anual de festivos para %s ya estaba precargada', year)
 
     holiday_cache.update(build_month_holiday_cache(year, year_holidays))
+    app_state.touch_holidays()
     app.logger.info('Precarga mensual de festivos completada para %s', year)
 
 
@@ -286,6 +379,7 @@ def get_month_holidays(year, month):
         if year_holidays:
             holiday_cache[year_cache_key] = year_holidays
             holiday_cache.update(build_month_holiday_cache(year, year_holidays))
+            app_state.touch_holidays()
             app.logger.info('Cache anual de festivos creada para %s', year)
         else:
             app.logger.warning('No se pudieron obtener festivos para %s', year)
@@ -441,12 +535,14 @@ def render_calendar(year, month):
 
 
 @app.route(f'/{SECRET_PATH}/')
+@app_state.cached_view(lambda: current_month_cache_key(), ('data', 'holidays'))
 def index():
     today = date.today()
     return render_calendar(today.year, today.month)
 
 
 @app.route(f'/{SECRET_PATH}/calendar/<int:year>/<int:month>')
+@app_state.cached_view(calendar_cache_key, ('data', 'holidays'))
 def calendar_view(year, month):
     return render_calendar(year, month)
 
@@ -504,7 +600,8 @@ def manage_rules():
 
     rule = DayWeekRule.query.filter_by(day_of_week=day_of_week).first()
     if not rule:
-        rule = DayWeekRule(day_of_week=day_of_week)
+        rule = DayWeekRule()
+        rule.day_of_week = day_of_week
 
     rule.algorithm = algorithm
 
@@ -522,6 +619,7 @@ def manage_rules():
 
     db.session.add(rule)
     db.session.commit()
+    app_state.touch_data()
 
     return jsonify({'success': True, 'id': rule.id})
 
@@ -543,17 +641,21 @@ def set_custom_shift():
         if custom:
             db.session.delete(custom)
             db.session.commit()
+            app_state.touch_data()
     else:
         if not custom:
-            custom = CustomShift(shift_date=shift_date)
+            custom = CustomShift()
+            custom.shift_date = shift_date
         custom.person = person
         db.session.add(custom)
         db.session.commit()
+        app_state.touch_data()
     
     return jsonify({'success': True})
 
 
 @app.route(f'/{SECRET_PATH}/settings')
+@app_state.cached_view(lambda: settings_cache_key(), ('data',))
 def settings():
     """Página para configurar las reglas"""
     days_of_week = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
