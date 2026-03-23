@@ -1,0 +1,10 @@
+[Unit]
+Description=Build Calendario image from source
+
+[Build]
+ImageTag=localhost/calendario:latest
+File=/opt/calendario/Dockerfile
+SetWorkingDirectory=/opt/calendario
+
+[Service]
+TimeoutStartSec=900

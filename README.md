@@ -217,6 +217,31 @@ La aplicación arranca actualmente en modo debug desde `app.py`.
 
 Si la vas a exponer a Internet, conviene revisar eso antes de desplegarla.
 
+## Despliegue con Podman Quadlet
+
+Si clonas el proyecto en `/opt/calendario`, copia estos ficheros a:
+
+```text
+/etc/containers/systemd/calendario.container
+/etc/containers/systemd/calendario.build
+```
+
+Suposiciones de ese quadlet:
+
+- ejecuta el contenedor como `uid 1000` y `gid 1000`
+- construye la imagen desde `/opt/calendario/Dockerfile`
+- monta `/opt/calendario/instance` en `/app/instance`
+- lee variables desde `/opt/calendario/.env`
+- usa sistema de ficheros de solo lectura en el contenedor, salvo el bind mount de `instance`
+- publica el puerto `5000`
+
+Activación:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now calendario.service
+```
+
 ## Fuente de festivos
 
 - API oficial de la Junta de Andalucía:

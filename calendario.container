@@ -1,0 +1,23 @@
+[Unit]
+Description=Calendario Flask app
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=calendario
+Image=calendario.build
+User=1000:1000
+ReadOnly=true
+WorkingDir=/app
+EnvironmentFile=/opt/calendario/.env
+Environment=FLASK_RUN_HOST=0.0.0.0
+Environment=FLASK_RUN_PORT=5000
+Environment=FLASK_DEBUG=0
+PublishPort=5000:5000
+Volume=/opt/calendario/instance:/app/instance:Z
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
