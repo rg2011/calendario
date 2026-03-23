@@ -219,6 +219,46 @@ def fetch_holidays_from_api(year):
     return holidays_by_date
 
 
+def build_month_holiday_cache(year, year_holidays):
+    """Construye la caché mensual completa a partir de los festivos anualizados."""
+    monthly_cache = {}
+
+    for month in range(1, 13):
+        month_start, month_end = month_date_range(year, month)
+        monthly_cache[(HOLIDAY_CACHE_VERSION, year, month)] = {
+            holiday_date: holiday_info
+            for holiday_date, holiday_info in year_holidays.items()
+            if month_start <= date.fromisoformat(holiday_date) <= month_end
+        }
+
+    return monthly_cache
+
+
+def warm_holiday_cache_for_year(year):
+    """
+    Precarga la caché anual y mensual para evitar latencia en la primera petición.
+    La API ya devuelve el año completo, así que se materializan también los 12 meses.
+    """
+    if year != date.today().year:
+        app.logger.info('Se omite la precarga de festivos para %s porque no es el año en curso', year)
+        return
+
+    year_cache_key = (HOLIDAY_CACHE_VERSION, year, 'full_year')
+    year_holidays = holiday_cache.get(year_cache_key)
+    if year_holidays is None:
+        app.logger.info('Precargando festivos anuales para %s', year)
+        year_holidays = fetch_holidays_from_api(year)
+        if not year_holidays:
+            app.logger.warning('No se pudo precargar la caché anual de festivos para %s', year)
+            return
+        holiday_cache[year_cache_key] = year_holidays
+    else:
+        app.logger.info('La caché anual de festivos para %s ya estaba precargada', year)
+
+    holiday_cache.update(build_month_holiday_cache(year, year_holidays))
+    app.logger.info('Precarga mensual de festivos completada para %s', year)
+
+
 def get_month_holidays(year, month):
     """
     Devuelve los festivos de un mes usando caché en memoria.
@@ -245,12 +285,22 @@ def get_month_holidays(year, month):
         year_holidays = fetch_holidays_from_api(year)
         if year_holidays:
             holiday_cache[year_cache_key] = year_holidays
+            holiday_cache.update(build_month_holiday_cache(year, year_holidays))
             app.logger.info('Cache anual de festivos creada para %s', year)
         else:
             app.logger.warning('No se pudieron obtener festivos para %s', year)
             return {}
     else:
         app.logger.info('Festivos %s obtenidos de cache anual: %s fechas', year, len(year_holidays))
+
+    if cache_key in holiday_cache:
+        app.logger.info(
+            'Festivos %s-%02d obtenidos de cache mensual tras cache anual: %s fechas',
+            year,
+            month,
+            len(holiday_cache[cache_key])
+        )
+        return holiday_cache[cache_key]
 
     month_holidays = {
         holiday_date: holiday_info
@@ -497,4 +547,5 @@ if __name__ == '__main__':
     app.logger.info('Escuchando en http://%s:%s/%s', host, port, SECRET_PATH)
     with app.app_context():
         db.create_all()
+    warm_holiday_cache_for_year(date.today().year)
     app.run(host=host, port=port, debug=debug)

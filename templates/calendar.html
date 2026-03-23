@@ -123,6 +123,13 @@ const holidayModal = document.getElementById('holidayModal');
 const holidayModalDateLabel = document.getElementById('holidayModalDate');
 const holidayModalName = document.getElementById('holidayModalName');
 const holidayModalCloseButton = document.getElementById('holidayModalClose');
+const prevMonthUrl = {{ prev_url|tojson }};
+const nextMonthUrl = {{ next_url|tojson }};
+const swipeSurface = document.body;
+const swipeThreshold = 60;
+let swipeStartX = null;
+let swipeStartY = null;
+let swipePointerId = null;
 
 function formatDateLabel(dateString) {
     const [year, month, day] = dateString.split('-').map(Number);
@@ -213,6 +220,48 @@ function saveShiftSelection(person) {
     .catch(error => console.error('Error:', error));
 }
 
+function navigateMonth(url) {
+    if (modal.style.display === 'block' || holidayModal.style.display === 'block') {
+        return;
+    }
+
+    window.location.href = url;
+}
+
+function storeSwipeStart(clientX, clientY) {
+    swipeStartX = clientX;
+    swipeStartY = clientY;
+}
+
+function resetSwipeStart() {
+    swipeStartX = null;
+    swipeStartY = null;
+    swipePointerId = null;
+}
+
+function handleSwipeEnd(clientX, clientY) {
+    if (swipeStartX === null || swipeStartY === null) {
+        resetSwipeStart();
+        return;
+    }
+
+    const deltaX = clientX - swipeStartX;
+    const deltaY = clientY - swipeStartY;
+
+    resetSwipeStart();
+
+    if (Math.abs(deltaX) < swipeThreshold || Math.abs(deltaX) <= Math.abs(deltaY)) {
+        return;
+    }
+
+    if (deltaX < 0) {
+        navigateMonth(nextMonthUrl);
+        return;
+    }
+
+    navigateMonth(prevMonthUrl);
+}
+
 document.querySelectorAll('.day-person').forEach((dayPerson) => {
     dayPerson.addEventListener('click', function(event) {
         event.preventDefault();
@@ -256,5 +305,45 @@ document.addEventListener('keydown', function(event) {
         closeHolidayModal();
     }
 });
+
+swipeSurface.addEventListener('touchstart', function(event) {
+    if (event.touches.length !== 1) return;
+    storeSwipeStart(event.touches[0].clientX, event.touches[0].clientY);
+}, { passive: true });
+
+document.addEventListener('touchend', function(event) {
+    if (event.changedTouches.length !== 1) {
+        resetSwipeStart();
+        return;
+    }
+
+    handleSwipeEnd(event.changedTouches[0].clientX, event.changedTouches[0].clientY);
+}, { passive: true });
+
+swipeSurface.addEventListener('pointerdown', function(event) {
+    if (event.button !== 0) {
+        return;
+    }
+
+    swipePointerId = event.pointerId;
+    storeSwipeStart(event.clientX, event.clientY);
+});
+
+document.addEventListener('pointerup', function(event) {
+    if (event.pointerId !== swipePointerId) {
+        return;
+    }
+
+    handleSwipeEnd(event.clientX, event.clientY);
+});
+
+document.addEventListener('pointercancel', function(event) {
+    if (event.pointerId !== swipePointerId) {
+        return;
+    }
+
+    resetSwipeStart();
+});
+document.addEventListener('touchcancel', resetSwipeStart, { passive: true });
 </script>
 {% endblock %}

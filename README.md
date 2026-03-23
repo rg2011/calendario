@@ -58,6 +58,7 @@ La aplicación intenta resolver los festivos de Sevilla usando la API oficial de
 Notas:
 - solo se consultan festivos del año en curso
 - la caché es solo en memoria
+- al arrancar la app, intenta precargar el año actual completo y materializa la caché mensual para evitar la latencia de la primera petición
 - al reiniciar la app, la caché se reconstruye
 - los festivos locales pueden venir con descripciones genéricas del tipo `FIESTA LOCAL EN SEVILLA (SEVILLA)`
 
