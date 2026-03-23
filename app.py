@@ -387,14 +387,7 @@ def get_shift_for_day(shift_date):
     return default_person, False
 
 
-@app.route(f'/{SECRET_PATH}/')
-def index():
-    today = date.today()
-    return redirect(url_for('calendar_view', year=today.year, month=today.month))
-
-
-@app.route(f'/{SECRET_PATH}/calendar/<int:year>/<int:month>')
-def calendar_view(year, month):
+def render_calendar(year, month):
     # Validar mes y año
     if month < 1 or month > 12:
         today = date.today()
@@ -445,6 +438,58 @@ def calendar_view(year, month):
     }
     
     return render_template('calendar.html', **context)
+
+
+@app.route(f'/{SECRET_PATH}/')
+def index():
+    today = date.today()
+    return render_calendar(today.year, today.month)
+
+
+@app.route(f'/{SECRET_PATH}/calendar/<int:year>/<int:month>')
+def calendar_view(year, month):
+    return render_calendar(year, month)
+
+
+@app.route(f'/{SECRET_PATH}/manifest.webmanifest')
+def web_app_manifest():
+    manifest = {
+        'id': url_for('index'),
+        'name': 'Calendario de Turnos',
+        'short_name': 'Calendario',
+        'description': 'Calendario mensual de turnos con reglas, sobrescrituras y festivos de Sevilla.',
+        'lang': 'es-ES',
+        'start_url': url_for('index'),
+        'scope': url_for('index'),
+        'display': 'standalone',
+        'orientation': 'portrait',
+        'background_color': '#5b8def',
+        'theme_color': '#31475f',
+        'icons': [
+            {
+                'src': url_for('secret_static', filename='icons/icon-192.png'),
+                'sizes': '192x192',
+                'type': 'image/png',
+                'purpose': 'any'
+            },
+            {
+                'src': url_for('secret_static', filename='icons/icon-512.png'),
+                'sizes': '512x512',
+                'type': 'image/png',
+                'purpose': 'any'
+            },
+            {
+                'src': url_for('secret_static', filename='icons/icon-512.png'),
+                'sizes': '512x512',
+                'type': 'image/png',
+                'purpose': 'maskable'
+            }
+        ]
+    }
+    return app.response_class(
+        json.dumps(manifest, ensure_ascii=False),
+        mimetype='application/manifest+json'
+    )
 
 
 @app.route(f'/{SECRET_PATH}/api/rules', methods=['GET', 'POST'])
