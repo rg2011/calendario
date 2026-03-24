@@ -85,7 +85,7 @@
 
     <div class="legend">
         <div class="legend-item">
-            <span class="legend-box custom"></span> Personalizado
+            <span class="legend-box custom"></span> Editado
         </div>
         <div class="legend-item">
             <span class="legend-box holiday"></span> Festivos {{ holiday_reference_year }}
@@ -200,7 +200,7 @@ function updateShiftModalSelection() {
         return;
     }
 
-    modalHintLabel.textContent = `Personalizado. Valor por defecto: ${defaultPerson || 'Vacío'}`;
+    modalHintLabel.textContent = `Editado. Valor por defecto: ${defaultPerson || 'Vacío'}`;
 }
 
 function openShiftSelector(date, person, defaultValue, note, absentPeople) {
