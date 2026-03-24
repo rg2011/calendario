@@ -63,6 +63,9 @@ class AppState:
     def _now(self):
         return datetime.now(timezone.utc)
 
+    def _local_now(self):
+        return datetime.now().astimezone()
+
     def touch(self, *names):
         current_time = self._now()
         for name in names:
@@ -74,14 +77,24 @@ class AppState:
     def touch_holidays(self):
         self.touch('holidays')
 
-    def last_modified(self, *names):
-        version_names = names or ('app',)
-        return max(self._versions[name] for name in version_names)
+    def current_day_snapshot(self):
+        local_now = self._local_now()
+        local_day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        return local_now.date().isoformat(), local_day_start.astimezone(timezone.utc)
 
-    def etag_for(self, resource_key, *names):
+    def last_modified(self, *names, floor=None):
+        version_names = names or ('app',)
+        current_last_modified = max(self._versions[name] for name in version_names)
+        if floor is not None and floor > current_last_modified:
+            return floor
+        return current_last_modified
+
+    def etag_for(self, resource_key, *names, extra_parts=None):
         payload = [str(resource_key)]
         for name in names:
             payload.append(f'{name}={self._versions[name].isoformat(timespec="microseconds")}')
+        if extra_parts:
+            payload.extend(str(part) for part in extra_parts)
         digest = sha256('|'.join(payload).encode('utf-8')).hexdigest()
         return f'calendario-{digest}'
 
@@ -99,13 +112,26 @@ class AppState:
 
         return False
 
-    def cached_view(self, resource_builder, version_names, cache_control='private, no-cache'):
+    def cached_view(
+        self,
+        resource_builder,
+        version_names,
+        cache_control='private, no-cache',
+        include_current_day=False,
+    ):
         def decorator(view_func):
             @wraps(view_func)
             def wrapped(*args, **kwargs):
                 resource_key = resource_builder(*args, **kwargs)
-                last_modified = self.last_modified(*version_names)
-                etag = self.etag_for(resource_key, *version_names)
+                etag_parts = []
+                last_modified_floor = None
+                if include_current_day:
+                    current_day_token, current_day_start = self.current_day_snapshot()
+                    etag_parts.append(f'day={current_day_token}')
+                    last_modified_floor = current_day_start
+
+                last_modified = self.last_modified(*version_names, floor=last_modified_floor)
+                etag = self.etag_for(resource_key, *version_names, extra_parts=etag_parts)
 
                 if self.is_not_modified(etag, last_modified):
                     response = make_response('', 304)
@@ -650,14 +676,14 @@ def render_calendar(year, month):
 
 
 @app.route(f'/{SECRET_PATH}/')
-@app_state.cached_view(lambda: current_month_cache_key(), ('data', 'holidays'))
+@app_state.cached_view(lambda: current_month_cache_key(), ('data', 'holidays'), include_current_day=True)
 def index():
     today = date.today()
     return render_calendar(today.year, today.month)
 
 
 @app.route(f'/{SECRET_PATH}/calendar/<int:year>/<int:month>')
-@app_state.cached_view(calendar_cache_key, ('data', 'holidays'))
+@app_state.cached_view(calendar_cache_key, ('data', 'holidays'), include_current_day=True)
 def calendar_view(year, month):
     return render_calendar(year, month)
 
