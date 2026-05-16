@@ -20,15 +20,42 @@
         },
         {
           "name": "AMAZON.HelpIntent",
-          "samples": []
+          "samples": [
+            "ayuda",
+            "que puedo preguntar",
+            "que puedes hacer"
+          ]
         },
         {
           "name": "AMAZON.CancelIntent",
-          "samples": []
+          "samples": [
+            "cancela",
+            "cancelar",
+            "basta",
+            "deja",
+            "para",
+            "para ya"
+          ]
         },
         {
           "name": "AMAZON.StopIntent",
-          "samples": []
+          "samples": [
+            "cierra {invocationName}",
+            "cierra el calendario",
+            "cierra el calendario familiar",
+            "cierra la app",
+            "cierra la aplicación",
+            "cierra la aplicación familiar",
+            "sal",
+            "salir",
+            "cierra",
+            "ok gracias",
+            "vale gracias",
+            "gracias",
+            "adiós",
+            "hasta luego",
+            "nos vemos"
+          ]
         },
         {
           "name": "AMAZON.FallbackIntent",

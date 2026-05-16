@@ -737,10 +737,17 @@ def handle_query_shift_intent(intent):
     summary = get_shift_summary_for_date(resolved_date)
     speech_date = format_date_for_speech(resolved_date)
     person = summary['person']
+    note = summary.get('note')
     if not person:
-        return _conversational_response(f'Para {speech_date} no tengo ninguna persona asignada.')
+        speech = f'El {speech_date} no tengo ninguna persona asignada.'
+        if note:
+            speech += f' Pero hay una nota: {note}'
+        return _conversational_response(speech)
 
-    return _conversational_response(f'Para {speech_date} le toca a {person}.')
+    speech = f'El {speech_date} le toca a {person}.'
+    if note:
+        speech += f' Hay una nota: {note}'
+    return _conversational_response(speech)
 
 
 def handle_alexa_request(payload):
