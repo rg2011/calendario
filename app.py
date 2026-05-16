@@ -681,16 +681,24 @@ def format_date_for_speech(target_date):
     return f'{weekday_name} {target_date.day} de {month_names[target_date.month]}'
 
 
-def alexa_plain_text_response(text, should_end_session=True):
-    return {
-        'version': '1.0',
-        'response': {
+def alexa_plain_text_response(text, should_end_session=True, reprompt_text=None):
+    response_body = {
+        'outputSpeech': {
+            'type': 'PlainText',
+            'text': text,
+        },
+        'shouldEndSession': should_end_session,
+    }
+    if reprompt_text is not None:
+        response_body['reprompt'] = {
             'outputSpeech': {
                 'type': 'PlainText',
-                'text': text,
-            },
-            'shouldEndSession': should_end_session,
+                'text': reprompt_text,
+            }
         }
+    return {
+        'version': '1.0',
+        'response': response_body,
     }
 
 
@@ -708,21 +716,31 @@ def verify_alexa_skill_id(payload):
     return request_skill_id == ALEXA_SKILL_ID
 
 
+# --- Conversation helpers ---------------------------------------------------
+
+_CONVERSATION_REPROMPT = '¿Quieres consultar otra fecha? Dime el día que quieras saber.'
+
+
+def _conversational_response(text):
+    """Returns a response that keeps the Alexa session open with a reprompt."""
+    return alexa_plain_text_response(text, should_end_session=False, reprompt_text=_CONVERSATION_REPROMPT)
+
+
 def handle_query_shift_intent(intent):
     slots = (intent or {}).get('slots') or {}
     date_slot = slots.get('target_date') or {}
     slot_value = (date_slot.get('value') or '').strip()
     resolved_date, error_message = resolve_simple_alexa_date(slot_value)
     if error_message:
-        return alexa_plain_text_response(error_message)
+        return _conversational_response(error_message)
 
     summary = get_shift_summary_for_date(resolved_date)
     speech_date = format_date_for_speech(resolved_date)
     person = summary['person']
     if not person:
-        return alexa_plain_text_response(f'Para {speech_date} no tengo ninguna persona asignada.')
+        return _conversational_response(f'Para {speech_date} no tengo ninguna persona asignada.')
 
-    return alexa_plain_text_response(f'Para {speech_date} le toca a {person}.')
+    return _conversational_response(f'Para {speech_date} le toca a {person}.')
 
 
 def handle_alexa_request(payload):
@@ -731,7 +749,9 @@ def handle_alexa_request(payload):
 
     if request_type == 'LaunchRequest':
         return alexa_plain_text_response(
-            'Puedes preguntarme quien va con los padres hoy o en una fecha concreta.'
+            'Hola. Puedo decirte quién tiene turno en cualquier día.',
+            should_end_session=False,
+            reprompt_text='¿Quieres saber quién tiene turno hoy? Dime una fecha.'
         )
 
     if request_type == 'IntentRequest':
@@ -741,21 +761,22 @@ def handle_alexa_request(payload):
         if intent_name == 'QueryShiftIntent':
             return handle_query_shift_intent(intent)
         if intent_name == 'AMAZON.HelpIntent':
-            return alexa_plain_text_response(
-                'Prueba por ejemplo: quien va con los padres hoy.'
+            return _conversational_response(
+                'Puedes preguntarme quién va con los padres en cualquier fecha. '
+                'Por ejemplo: ¿quién viene hoy?'
             )
         if intent_name in {'AMAZON.StopIntent', 'AMAZON.CancelIntent'}:
             return alexa_plain_text_response('Hasta luego.')
         if intent_name == 'AMAZON.FallbackIntent':
-            return alexa_plain_text_response(
-                'No te he entendido. Prueba preguntando quien va con los padres hoy.'
+            return _conversational_response(
+                'No te he entendido. Prueba preguntando quién va con los padres hoy.'
             )
         if intent_name == 'QueryNotesIntent':
-            return alexa_plain_text_response(
-                'La consulta de notas todavia no esta disponible en esta primera version.'
+            return _conversational_response(
+                'La consulta de notas todavía no está disponible en esta primera versión.'
             )
 
-    return alexa_plain_text_response('No he podido procesar esa peticion.')
+    return alexa_plain_text_response('No he podido procesar esa petición.')
 
 
 def render_calendar(year, month):

@@ -75,6 +75,11 @@ Artefactos previstos:
 - `tools/alexa_sync.py` o equivalente
 - fichero local con `skill_id` y parámetros de despliegue
 
+Regla operativa del endpoint:
+
+- cuando el backend usa HTTPS con certificado publico valido, la herramienta debe publicar `sslCertificateType: "Trusted"` en el manifest
+- no se debe depender de marcar esa opcion manualmente en la consola web
+
 ### Motivos
 
 - Reutiliza la lógica ya existente de `app.py`.

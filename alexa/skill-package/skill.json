@@ -28,7 +28,8 @@
     "apis": {
       "custom": {
         "endpoint": {
-          "uri": "https://calendario.home.fivecorporation.com/CHANGE_ME/alexa"
+          "uri": "https://calendario.home.fivecorporation.com/CHANGE_ME/alexa",
+          "sslCertificateType": "Trusted"
         },
         "interfaces": []
       }

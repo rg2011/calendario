@@ -238,6 +238,8 @@ def render_manifest(payload: dict[str, Any], env: AlexaEnv) -> dict[str, Any]:
     endpoint = apis.setdefault("endpoint", {})
     if env.endpoint_url:
         endpoint["uri"] = env.endpoint_url
+    if endpoint.get("uri", "").startswith("https://"):
+        endpoint["sslCertificateType"] = "Trusted"
     return manifest
 
 

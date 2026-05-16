@@ -53,6 +53,10 @@ Estas credenciales servirán para que una herramienta local pueda crear o actual
 - validaciones y pruebas
 - beta testing, si se usa
 
+Para endpoints HTTPS con certificado publico valido, el manifest debe publicar explicitamente:
+
+- `sslCertificateType: "Trusted"`
+
 ## Bootstrap de credenciales SMAPI
 
 El flujo esperado para obtener el `refresh_token` es:
