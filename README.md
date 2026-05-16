@@ -188,7 +188,8 @@ Las tablas principales son:
 ### `custom_shifts`
 
 - `shift_date`
-- `person`
+- `person` (opcional)
+- `note`
 
 La base de datos se crea automáticamente en `instance/calendar.db`.
 

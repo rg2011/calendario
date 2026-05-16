@@ -593,18 +593,18 @@ def get_shift_for_day(shift_date, absent_people=None):
     """
     Obtiene el turno asignado para un día específico.
     Primero verifica si hay customización, luego aplica la regla.
-    Retorna tupla: (person, is_custom, note)
+    Retorna tupla: (effective_person, is_custom, note, custom_person)
     """
-    # Verificar si hay turno customizado
     default_person = get_default_shift_for_day(shift_date)
     if is_person_absent_on_date(default_person, shift_date, absent_people):
         default_person = None
 
     custom = CustomShift.query.filter_by(shift_date=shift_date).first()
     if custom:
-        return custom.person, True, custom.note
+        effective_person = custom.person if custom.person else default_person
+        return effective_person, True, custom.note, custom.person
 
-    return default_person, False, None
+    return default_person, False, None, None
 
 
 def render_calendar(year, month):
@@ -635,10 +635,11 @@ def render_calendar(year, month):
         default_person = get_default_shift_for_day(day['date'])
         if is_person_absent_on_date(default_person, day['date'], absent_people):
             default_person = None
-        person, is_custom, note = get_shift_for_day(day['date'], absent_people)
+        person, is_custom, note, custom_person = get_shift_for_day(day['date'], absent_people)
         holiday_info = visible_holidays.get(day['date'].isoformat())
         day['person'] = person
         day['default_person'] = default_person
+        day['custom_person'] = custom_person
         day['is_custom'] = is_custom
         day['note'] = note
         day['absent_people'] = absent_people
@@ -769,21 +770,27 @@ def manage_rules():
 def set_custom_shift():
     data = request.get_json() or {}
     shift_date_str = data.get('shift_date')
-    person = data.get('person')
+    raw_person = (data.get('person') or '').strip()
+    person = raw_person or None
     note = (data.get('note') or '').strip() or None
-    
-    if not shift_date_str or not person:
+
+    if not shift_date_str:
         return jsonify({'success': False, 'error': 'Invalid data'}), 400
-    
+
     shift_date = datetime.fromisoformat(shift_date_str).date()
-    if person != 'clear' and person not in PEOPLE:
+    should_delete = raw_person == 'clear'
+    if should_delete:
+        person = None
+
+    if person and person not in PEOPLE:
         return jsonify({'success': False, 'error': 'Persona no válida'}), 400
-    if person != 'clear' and is_person_absent_on_date(person, shift_date):
+    if person and is_person_absent_on_date(person, shift_date):
         return jsonify({'success': False, 'error': 'La persona está ausente en esa fecha'}), 400
-    
+
     custom = CustomShift.query.filter_by(shift_date=shift_date).first()
-    
-    if person == 'clear':
+
+    should_delete = should_delete or (not person and not note)
+    if should_delete:
         if custom:
             db.session.delete(custom)
             db.session.commit()
@@ -802,19 +809,53 @@ def set_custom_shift():
 
 
 def ensure_custom_shift_schema():
-    """Asegura columnas nuevas en SQLite sin requerir una herramienta de migraciones."""
+    """Asegura que custom_shifts tenga note y permita person=NULL."""
     inspector = db.inspect(db.engine)
     if 'custom_shifts' not in inspector.get_table_names():
         return
 
-    columns = {column['name'] for column in inspector.get_columns('custom_shifts')}
-    if 'note' in columns:
+    columns = inspector.get_columns('custom_shifts')
+    column_names = {column['name'] for column in columns}
+    person_column = next((column for column in columns if column['name'] == 'person'), None)
+    note_exists = 'note' in column_names
+    person_allows_null = bool(person_column and person_column.get('nullable', False))
+
+    if note_exists and person_allows_null:
         return
 
     with db.engine.begin() as connection:
-        connection.exec_driver_sql('ALTER TABLE custom_shifts ADD COLUMN note TEXT')
+        connection.exec_driver_sql(
+            '''
+            CREATE TABLE custom_shifts_new (
+                id INTEGER PRIMARY KEY,
+                shift_date DATE NOT NULL UNIQUE,
+                person VARCHAR(50),
+                note TEXT,
+                created_at DATETIME,
+                updated_at DATETIME
+            )
+            '''
+        )
+        if note_exists:
+            connection.exec_driver_sql(
+                '''
+                INSERT INTO custom_shifts_new (id, shift_date, person, note, created_at, updated_at)
+                SELECT id, shift_date, person, note, created_at, updated_at
+                FROM custom_shifts
+                '''
+            )
+        else:
+            connection.exec_driver_sql(
+                '''
+                INSERT INTO custom_shifts_new (id, shift_date, person, created_at, updated_at)
+                SELECT id, shift_date, person, created_at, updated_at
+                FROM custom_shifts
+                '''
+            )
+        connection.exec_driver_sql('DROP TABLE custom_shifts')
+        connection.exec_driver_sql('ALTER TABLE custom_shifts_new RENAME TO custom_shifts')
     app_state.touch_data()
-    app.logger.info('Esquema actualizado: columna custom_shifts.note añadida')
+    app.logger.info('Esquema actualizado: custom_shifts.person ahora permite NULL y note está disponible')
 
 
 def ensure_absence_schema():

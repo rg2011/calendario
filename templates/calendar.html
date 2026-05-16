@@ -66,8 +66,10 @@
                         </div>
                         <div class="day-person"
                              data-date="{{ day.date.isoformat() }}"
-                             data-current-person="{{ day.person or '' }}"
+                             data-current-person="{{ day.custom_person or '' }}"
+                             data-effective-person="{{ day.person or '' }}"
                              data-default-person="{{ day.default_person or '' }}"
+                             data-is-custom="{{ 'true' if day.is_custom else 'false' }}"
                              data-note="{{ day.note or '' }}"
                              data-absent-people='{{ day.absent_people|tojson }}'>
                             <span class="person-name person-name-full">{{ day.person or 'Vacío' }}</span>
@@ -97,7 +99,7 @@
         <div class="shift-modal-content">
             <div class="shift-modal-header">
                 <div>
-                    <h3>Seleccionar persona</h3>
+                    <h3>Editar día</h3>
                     <p id="shiftModalDate" class="shift-modal-date"></p>
                     <p id="shiftModalHint" class="shift-modal-hint"></p>
                 </div>
@@ -109,7 +111,8 @@
                 <button class="shift-option person-ana" data-person="Ana">Ana</button>
                 <label class="shift-note-field" for="shiftNote">Anotación</label>
                 <textarea id="shiftNote" class="shift-note-input" rows="4" placeholder="Añade una anotación para este día personalizado"></textarea>
-                <button id="shiftOptionClear" class="shift-option shift-option-clear" data-person="clear">Valor por defecto</button>
+                <button id="shiftOptionClear" class="shift-option shift-option-clear" data-person="">Guardar con valor por defecto</button>
+                <button id="shiftOptionDelete" class="shift-option shift-option-clear" data-person="clear">Eliminar personalización</button>
             </div>
         </div>
     </div>
@@ -133,15 +136,18 @@
 <script>
 let currentDate = null;
 let currentPerson = null;
+let currentEffectivePerson = null;
 let defaultPerson = null;
 let currentNote = '';
 let currentAbsentPeople = [];
+let currentIsCustom = false;
 const customShiftApiUrl = {{ url_for('set_custom_shift')|tojson }};
 const modal = document.getElementById('shiftModal');
 const modalDateLabel = document.getElementById('shiftModalDate');
 const modalHintLabel = document.getElementById('shiftModalHint');
 const modalCloseButton = document.getElementById('shiftModalClose');
 const clearOptionButton = document.getElementById('shiftOptionClear');
+const deleteOptionButton = document.getElementById('shiftOptionDelete');
 const shiftNoteInput = document.getElementById('shiftNote');
 const holidayModal = document.getElementById('holidayModal');
 const holidayModalDateLabel = document.getElementById('holidayModalDate');
@@ -185,30 +191,38 @@ function updateShiftModalSelection() {
     });
 
     clearOptionButton.textContent = defaultPerson
-        ? `Valor por defecto: ${defaultPerson}`
-        : 'Valor por defecto: Sin regla';
+        ? `Guardar con valor por defecto: ${defaultPerson}`
+        : 'Guardar con valor por defecto: Sin regla';
+    deleteOptionButton.style.display = currentIsCustom ? 'block' : 'none';
 
-    if (!currentPerson) {
+    if (!currentIsCustom) {
         modalHintLabel.textContent = defaultPerson
             ? `Sin personalización. Valor por defecto: ${defaultPerson}`
             : 'Sin personalización ni regla por defecto';
         return;
     }
 
+    if (!currentPerson) {
+        modalHintLabel.textContent = `Editado solo con nota. Valor aplicado: ${currentEffectivePerson || 'Vacío'}`;
+        return;
+    }
+
     if (currentPerson === defaultPerson) {
-        modalHintLabel.textContent = `Valor por defecto actual: ${defaultPerson}`;
+        modalHintLabel.textContent = `Editado. Coincide con el valor por defecto: ${defaultPerson}`;
         return;
     }
 
     modalHintLabel.textContent = `Editado. Valor por defecto: ${defaultPerson || 'Vacío'}`;
 }
 
-function openShiftSelector(date, person, defaultValue, note, absentPeople) {
+function openShiftSelector(date, person, effectivePerson, defaultValue, note, absentPeople, isCustom) {
     currentDate = date;
     currentPerson = person || null;
+    currentEffectivePerson = effectivePerson || null;
     defaultPerson = defaultValue || null;
     currentNote = note || '';
     currentAbsentPeople = Array.isArray(absentPeople) ? absentPeople : [];
+    currentIsCustom = isCustom;
     modal.style.display = 'block';
     modalDateLabel.textContent = formatDateLabel(date);
     shiftNoteInput.value = currentNote;
@@ -222,9 +236,11 @@ function closeShiftSelector() {
     shiftNoteInput.value = '';
     currentDate = null;
     currentPerson = null;
+    currentEffectivePerson = null;
     defaultPerson = null;
     currentNote = '';
     currentAbsentPeople = [];
+    currentIsCustom = false;
 }
 
 function openHolidayModal(date, holidayName) {
@@ -338,9 +354,11 @@ document.querySelectorAll('.calendar-day').forEach((calendarDay) => {
         openShiftSelector(
             this.dataset.date,
             dayPerson.dataset.currentPerson,
+            dayPerson.dataset.effectivePerson,
             dayPerson.dataset.defaultPerson,
             dayPerson.dataset.note,
-            JSON.parse(dayPerson.dataset.absentPeople || '[]')
+            JSON.parse(dayPerson.dataset.absentPeople || '[]'),
+            dayPerson.dataset.isCustom === 'true'
         );
     });
 });
