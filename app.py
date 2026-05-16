@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, url_for, jsonify, send_from_directory, make_response
 from datetime import datetime, timedelta, date, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import urlencode
 from urllib.request import urlopen
 from functools import wraps
@@ -627,6 +628,11 @@ def get_shift_summary_for_date(shift_date):
     }
 
 
+# La zona horaria del calendario es España. Usarla aquí evita que
+# "hoy" se resuelva mal cuando el servidor corre en UTC.
+LOCAL_TZ = ZoneInfo('Europe/Madrid')
+
+
 def resolve_simple_alexa_date(slot_value, today=None):
     """
     Resuelve un subconjunto inicial de AMAZON.DATE.
@@ -639,7 +645,7 @@ def resolve_simple_alexa_date(slot_value, today=None):
     if not slot_value:
         return None, 'No has indicado ninguna fecha.'
 
-    today = today or date.today()
+    today = today or datetime.now(LOCAL_TZ).date()
     raw = slot_value.strip()
 
     if raw == 'PRESENT_REF':
