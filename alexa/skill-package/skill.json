@@ -1,0 +1,52 @@
+{
+  "manifest": {
+    "publishingInformation": {
+      "locales": {
+        "es-ES": {
+          "name": "calendario",
+          "summary": "Consulta quien tiene asignado el turno familiar en una fecha",
+          "description": "Skill privada para consultar por voz quien atiende a los padres en una fecha concreta.",
+          "examplePhrases": [
+            "Alexa, abre calendario",
+            "Alexa, pregunta a calendario quien viene mañana",
+            "Alexa, pregunta a calendario a quien le toca hoy"
+          ],
+          "keywords": [
+            "calendario",
+            "turnos",
+            "familia"
+          ]
+        }
+      },
+      "isAvailableWorldwide": false,
+      "testingInstructions": "Skill privada para uso familiar. No publicar.",
+      "category": "KNOWLEDGE_AND_TRIVIA",
+      "distributionCountries": [
+        "ES"
+      ]
+    },
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "https://calendario.home.fivecorporation.com/CHANGE_ME/alexa"
+        },
+        "interfaces": []
+      }
+    },
+    "manifestVersion": "1.0",
+    "permissions": [],
+    "privacyAndCompliance": {
+      "allowsPurchases": false,
+      "usesPersonalInfo": false,
+      "isChildDirected": false,
+      "isExportCompliant": true,
+      "containsAds": false,
+      "locales": {
+        "es-ES": {
+          "privacyPolicyUrl": "https://calendario.home.fivecorporation.com/privacy",
+          "termsOfUseUrl": "https://calendario.home.fivecorporation.com/terms"
+        }
+      }
+    }
+  }
+}

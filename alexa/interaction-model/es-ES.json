@@ -1,0 +1,41 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "calendario",
+      "intents": [
+        {
+          "name": "QueryShiftIntent",
+          "slots": [
+            {
+              "name": "target_date",
+              "type": "AMAZON.DATE"
+            }
+          ],
+          "samples": [
+            "a quien le toca {target_date}",
+            "quien viene {target_date}",
+            "quien va con los padres {target_date}",
+            "quien atiende a los padres {target_date}"
+          ]
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        }
+      ],
+      "types": []
+    }
+  }
+}

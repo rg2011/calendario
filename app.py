@@ -30,6 +30,7 @@ app.logger.setLevel(logging.INFO)
 db.init_app(app)
 
 PEOPLE = ['Juanmi', 'Rafa', 'Ana']
+ALEXA_SKILL_ID = os.environ.get('ALEXA_SKILL_ID', '').strip()
 HOLIDAY_API_URL = 'https://datos.juntadeandalucia.es/api/v0/work-calendar/get/search_calendar'
 HOLIDAY_API_PROVINCE = 'SEVILLA'
 HOLIDAY_API_MUNICIPALITY = 'SEVILLA'
@@ -607,6 +608,156 @@ def get_shift_for_day(shift_date, absent_people=None):
     return default_person, False, None, None
 
 
+def get_shift_summary_for_date(shift_date):
+    """Resume el estado de turno para una fecha concreta."""
+    absent_people = get_absences_for_dates([shift_date]).get(shift_date.isoformat(), [])
+    default_person = get_default_shift_for_day(shift_date)
+    if is_person_absent_on_date(default_person, shift_date, absent_people):
+        default_person = None
+    person, is_custom, note, custom_person = get_shift_for_day(shift_date, absent_people)
+    return {
+        'date': shift_date,
+        'date_iso': shift_date.isoformat(),
+        'person': person,
+        'default_person': default_person,
+        'custom_person': custom_person,
+        'is_custom': is_custom,
+        'note': note,
+        'absent_people': absent_people,
+    }
+
+
+def resolve_simple_alexa_date(slot_value, today=None):
+    """
+    Resuelve un subconjunto inicial de AMAZON.DATE.
+
+    Soportado:
+    - PRESENT_REF
+    - YYYY-MM-DD
+    - XXXX-MM-DD
+    """
+    if not slot_value:
+        return None, 'No has indicado ninguna fecha.'
+
+    today = today or date.today()
+    raw = slot_value.strip()
+
+    if raw == 'PRESENT_REF':
+        return today, None
+
+    if len(raw) == 10 and raw[:4].isdigit() and raw[4] == '-' and raw[7] == '-':
+        try:
+            return datetime.fromisoformat(raw).date(), None
+        except ValueError:
+            return None, 'No he podido interpretar esa fecha.'
+
+    if raw.startswith('XXXX-') and len(raw) == 10:
+        try:
+            month = int(raw[5:7])
+            day = int(raw[8:10])
+            candidate = date(today.year, month, day)
+        except ValueError:
+            return None, 'No he podido interpretar esa fecha.'
+        if candidate < today:
+            try:
+                candidate = date(today.year + 1, month, day)
+            except ValueError:
+                return None, 'No he podido interpretar esa fecha.'
+        return candidate, None
+
+    return None, (
+        'Todavia no soporte ese formato de fecha. '
+        'Por ahora prueba con hoy o con una fecha concreta como el quince de mayo.'
+    )
+
+
+def format_date_for_speech(target_date):
+    weekday_names = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+    month_names = {
+        1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril', 5: 'mayo', 6: 'junio',
+        7: 'julio', 8: 'agosto', 9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
+    }
+    weekday_name = weekday_names[target_date.weekday()]
+    return f'{weekday_name} {target_date.day} de {month_names[target_date.month]}'
+
+
+def alexa_plain_text_response(text, should_end_session=True):
+    return {
+        'version': '1.0',
+        'response': {
+            'outputSpeech': {
+                'type': 'PlainText',
+                'text': text,
+            },
+            'shouldEndSession': should_end_session,
+        }
+    }
+
+
+def verify_alexa_skill_id(payload):
+    if not ALEXA_SKILL_ID:
+        return True
+
+    application = (
+        (payload or {})
+        .get('context', {})
+        .get('System', {})
+        .get('application', {})
+    )
+    request_skill_id = (application.get('applicationId') or '').strip()
+    return request_skill_id == ALEXA_SKILL_ID
+
+
+def handle_query_shift_intent(intent):
+    slots = (intent or {}).get('slots') or {}
+    date_slot = slots.get('target_date') or {}
+    slot_value = (date_slot.get('value') or '').strip()
+    resolved_date, error_message = resolve_simple_alexa_date(slot_value)
+    if error_message:
+        return alexa_plain_text_response(error_message)
+
+    summary = get_shift_summary_for_date(resolved_date)
+    speech_date = format_date_for_speech(resolved_date)
+    person = summary['person']
+    if not person:
+        return alexa_plain_text_response(f'Para {speech_date} no tengo ninguna persona asignada.')
+
+    return alexa_plain_text_response(f'Para {speech_date} le toca a {person}.')
+
+
+def handle_alexa_request(payload):
+    request_envelope = (payload or {}).get('request') or {}
+    request_type = request_envelope.get('type')
+
+    if request_type == 'LaunchRequest':
+        return alexa_plain_text_response(
+            'Puedes preguntarme quien va con los padres hoy o en una fecha concreta.'
+        )
+
+    if request_type == 'IntentRequest':
+        intent = request_envelope.get('intent') or {}
+        intent_name = intent.get('name')
+
+        if intent_name == 'QueryShiftIntent':
+            return handle_query_shift_intent(intent)
+        if intent_name == 'AMAZON.HelpIntent':
+            return alexa_plain_text_response(
+                'Prueba por ejemplo: quien va con los padres hoy.'
+            )
+        if intent_name in {'AMAZON.StopIntent', 'AMAZON.CancelIntent'}:
+            return alexa_plain_text_response('Hasta luego.')
+        if intent_name == 'AMAZON.FallbackIntent':
+            return alexa_plain_text_response(
+                'No te he entendido. Prueba preguntando quien va con los padres hoy.'
+            )
+        if intent_name == 'QueryNotesIntent':
+            return alexa_plain_text_response(
+                'La consulta de notas todavia no esta disponible en esta primera version.'
+            )
+
+    return alexa_plain_text_response('No he podido procesar esa peticion.')
+
+
 def render_calendar(year, month):
     # Validar mes y año
     if month < 1 or month > 12:
@@ -1002,6 +1153,21 @@ def absences():
 @app.route(f'/{SECRET_PATH}/static/<path:filename>')
 def secret_static(filename):
     return send_from_directory(os.path.join(app.root_path, 'static'), filename)
+
+
+@app.route(f'/{SECRET_PATH}/alexa', methods=['POST'])
+def alexa_webhook():
+    payload = request.get_json(silent=True) or {}
+    if not verify_alexa_skill_id(payload):
+        app.logger.warning('Peticion Alexa rechazada por applicationId no valido')
+        return jsonify({'message': 'Forbidden'}), 403
+
+    request_type = ((payload.get('request') or {}).get('type') or '').strip()
+    intent_name = (
+        ((payload.get('request') or {}).get('intent') or {}).get('name') or ''
+    ).strip()
+    app.logger.info('Alexa request type=%s intent=%s', request_type or '-', intent_name or '-')
+    return jsonify(handle_alexa_request(payload))
 
 
 @app.before_request

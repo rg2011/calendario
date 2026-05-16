@@ -1,0 +1,7 @@
+{
+  "skill_package_path": "alexa/skill-package/skill.json",
+  "interaction_model_description": "Primera version del intent de consulta de turno por fecha simple.",
+  "interaction_model": {
+    "es-ES": "alexa/interaction-model/es-ES.json"
+  }
+}
