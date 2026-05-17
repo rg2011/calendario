@@ -3,6 +3,7 @@ from flask import Flask
 from src.holidays import HolidayProvider
 from src.httpcache import CacheState
 from src.models import db
+from src.sqlite_vec import init_db as init_sqlite_vec
 
 from .schema import ensure_absence_schema, ensure_custom_shift_schema
 
@@ -14,6 +15,7 @@ def initialize_runtime(
 ) -> None:
     """Crea tablas, aplica migraciones inline y arranca workers en background."""
     db.create_all()
+    init_sqlite_vec(db, app.logger)
     ensure_custom_shift_schema(app.logger, cache_state)
     ensure_absence_schema(app.logger, cache_state)
     holiday_provider.ensure_refresh_worker()
