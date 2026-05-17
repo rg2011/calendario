@@ -96,7 +96,9 @@ def web_app_manifest():
         "id": url_for("index"),
         "name": "Calendario de Turnos",
         "short_name": "Calendario",
-        "description": "Calendario mensual de turnos con reglas, sobrescrituras y festivos de Sevilla.",
+        "description": (
+            "Calendario mensual de turnos con reglas, sobrescrituras y festivos de Sevilla."
+        ),
         "lang": "es-ES",
         "start_url": url_for("index"),
         "scope": url_for("index"),
