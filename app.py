@@ -11,6 +11,7 @@ import calendar
 import json
 import logging
 import os
+import re
 import time
 
 from dotenv import load_dotenv
@@ -650,11 +651,11 @@ def resolve_simple_alexa_date(slot_value, today=None):
     raw = slot_value.strip()
 
     if raw == 'PRESENT_REF':
-        return today, None
+        return {'kind': 'date', 'date': today}, None
 
     if len(raw) == 10 and raw[:4].isdigit() and raw[4] == '-' and raw[7] == '-':
         try:
-            return datetime.fromisoformat(raw).date(), None
+            return {'kind': 'date', 'date': datetime.fromisoformat(raw).date()}, None
         except ValueError:
             return None, 'No he podido interpretar esa fecha.'
 
@@ -670,7 +671,21 @@ def resolve_simple_alexa_date(slot_value, today=None):
                 candidate = date(today.year + 1, month, day)
             except ValueError:
                 return None, 'No he podido interpretar esa fecha.'
-        return candidate, None
+        return {'kind': 'date', 'date': candidate}, None
+
+    weekend_match = re.fullmatch(r'(\d{4})-W(\d{2})-WE', raw)
+    if weekend_match:
+        year = int(weekend_match.group(1))
+        week = int(weekend_match.group(2))
+        try:
+            saturday = date.fromisocalendar(year, week, 6)
+            sunday = date.fromisocalendar(year, week, 7)
+        except ValueError:
+            return None, 'No he podido interpretar ese fin de semana.'
+        return {
+            'kind': 'weekend',
+            'dates': [saturday, sunday],
+        }, None
 
     return None, (
         'Todavia no soporte ese formato de fecha. '
@@ -686,6 +701,73 @@ def format_date_for_speech(target_date):
     }
     weekday_name = weekday_names[target_date.weekday()]
     return f'{weekday_name} {target_date.day} de {month_names[target_date.month]}'
+
+
+def format_weekend_for_speech(target_dates):
+    saturday, sunday = target_dates
+    if saturday.month == sunday.month:
+        month_names = {
+            1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril', 5: 'mayo', 6: 'junio',
+            7: 'julio', 8: 'agosto', 9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
+        }
+        return (
+            f'el fin de semana del sabado {saturday.day} '
+            f'y domingo {sunday.day} de {month_names[saturday.month]}'
+        )
+    return (
+        f'el fin de semana del {format_date_for_speech(saturday)} '
+        f'y {format_date_for_speech(sunday)}'
+    )
+
+
+def _join_people_for_speech(people):
+    if not people:
+        return ''
+    if len(people) == 1:
+        return people[0]
+    if len(people) == 2:
+        return f'{people[0]} y {people[1]}'
+    return f"{', '.join(people[:-1])} y {people[-1]}"
+
+
+def get_shift_summary_for_target(resolved_target):
+    if resolved_target['kind'] == 'date':
+        return {
+            'kind': 'date',
+            'summary': get_shift_summary_for_date(resolved_target['date']),
+        }
+
+    daily_summaries = [get_shift_summary_for_date(target_date) for target_date in resolved_target['dates']]
+    people = []
+    for summary in daily_summaries:
+        person = summary.get('person')
+        if person and person not in people:
+            people.append(person)
+    notes = [
+        {
+            'date': summary['date'],
+            'speech_date': format_date_for_speech(summary['date']),
+            'note': summary['note'].strip(),
+        }
+        for summary in daily_summaries
+        if (summary.get('note') or '').strip()
+    ]
+    return {
+        'kind': 'weekend',
+        'dates': resolved_target['dates'],
+        'daily_summaries': daily_summaries,
+        'people': people,
+        'notes': notes,
+    }
+
+
+def _format_enumerated_notes_for_speech(notes):
+    if not notes:
+        return ''
+    note_parts = [f"{note['speech_date']}: {note['note']}" for note in notes]
+    if len(note_parts) == 1:
+        return note_parts[0]
+    return '; '.join(note_parts)
 
 
 def alexa_plain_text_response(text, should_end_session=True, reprompt_text=None):
@@ -792,12 +874,27 @@ def handle_query_shift_intent(intent):
     slots = (intent or {}).get('slots') or {}
     date_slot = slots.get('target_date') or {}
     slot_value = (date_slot.get('value') or '').strip()
-    resolved_date, error_message = resolve_simple_alexa_date(slot_value)
+    resolved_target, error_message = resolve_simple_alexa_date(slot_value)
     if error_message:
         return _conversational_response(error_message)
 
-    summary = get_shift_summary_for_date(resolved_date)
-    speech_date = format_date_for_speech(resolved_date)
+    target_summary = get_shift_summary_for_target(resolved_target)
+    if target_summary['kind'] == 'weekend':
+        speech_date = format_weekend_for_speech(target_summary['dates'])
+        people = target_summary['people']
+        notes = target_summary['notes']
+        if not people:
+            speech = f'Para {speech_date} no tengo ninguna persona asignada.'
+        elif len(people) == 1:
+            speech = f'Para {speech_date} le toca a {_join_people_for_speech(people)}.'
+        else:
+            speech = f'Para {speech_date} les toca a {_join_people_for_speech(people)}.'
+        if notes:
+            speech += f" Hay estas notas: {_format_enumerated_notes_for_speech(notes)}"
+        return _conversational_response(speech)
+
+    summary = target_summary['summary']
+    speech_date = format_date_for_speech(summary['date'])
     person = summary['person']
     note = summary.get('note')
     if not person:
@@ -816,12 +913,32 @@ def handle_query_notes_intent(intent):
     slots = (intent or {}).get('slots') or {}
     date_slot = slots.get('target_date') or {}
     slot_value = (date_slot.get('value') or '').strip()
-    resolved_date, error_message = resolve_simple_alexa_date(slot_value)
+    resolved_target, error_message = resolve_simple_alexa_date(slot_value)
     if error_message:
         return _conversational_response(error_message)
 
-    summary = get_shift_summary_for_date(resolved_date)
-    speech_date = format_date_for_speech(resolved_date)
+    target_summary = get_shift_summary_for_target(resolved_target)
+    if target_summary['kind'] == 'weekend':
+        speech_date = format_weekend_for_speech(target_summary['dates'])
+        notes = target_summary['notes']
+        people = target_summary['people']
+        people_clause = ''
+        if people:
+            if len(people) == 1:
+                people_clause = f' Le toca a {_join_people_for_speech(people)}.'
+            else:
+                people_clause = f' Les toca a {_join_people_for_speech(people)}.'
+        if not notes:
+            return _conversational_response(
+                f'Para {speech_date} no hay ninguna nota apuntada.{people_clause}'
+            )
+        return _conversational_response(
+            f'Para {speech_date} tengo estas notas: '
+            f'{_format_enumerated_notes_for_speech(notes)}.{people_clause}'
+        )
+
+    summary = target_summary['summary']
+    speech_date = format_date_for_speech(summary['date'])
     note = (summary.get('note') or '').strip()
     if not note:
         return _conversational_response(f'El {speech_date} no hay ninguna nota apuntada.')
