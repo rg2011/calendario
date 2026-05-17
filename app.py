@@ -7,6 +7,7 @@ import os
 from src.alexa import New as NewAlexaHandler
 from dotenv import load_dotenv
 from src.absences import New as NewAbsenceService, serialize_absence
+from src.bootstrap import initialize_runtime, register_startup
 from src.calendar import New as NewCalendarService
 from src.holidays import New as NewHolidayProvider
 from src.httpcache import (
@@ -16,7 +17,7 @@ from src.httpcache import (
     current_month_cache_key,
     settings_cache_key,
 )
-from src.models import db, Absence
+from src.models import db
 from src.shifts import New as NewShiftService, serialize_rule
 
 load_dotenv()
@@ -137,107 +138,6 @@ def manage_rules():
 def set_custom_shift():
     payload, status = shift_service.set_custom_shift(request.get_json() or {})
     return jsonify(payload), status
-
-
-def ensure_custom_shift_schema():
-    """Asegura que custom_shifts tenga note y permita person=NULL."""
-    inspector = db.inspect(db.engine)
-    if 'custom_shifts' not in inspector.get_table_names():
-        return
-
-    columns = inspector.get_columns('custom_shifts')
-    column_names = {column['name'] for column in columns}
-    person_column = next((column for column in columns if column['name'] == 'person'), None)
-    note_exists = 'note' in column_names
-    person_allows_null = bool(person_column and person_column.get('nullable', False))
-
-    if note_exists and person_allows_null:
-        return
-
-    with db.engine.begin() as connection:
-        connection.exec_driver_sql(
-            '''
-            CREATE TABLE custom_shifts_new (
-                id INTEGER PRIMARY KEY,
-                shift_date DATE NOT NULL UNIQUE,
-                person VARCHAR(50),
-                note TEXT,
-                created_at DATETIME,
-                updated_at DATETIME
-            )
-            '''
-        )
-        if note_exists:
-            connection.exec_driver_sql(
-                '''
-                INSERT INTO custom_shifts_new (id, shift_date, person, note, created_at, updated_at)
-                SELECT id, shift_date, person, note, created_at, updated_at
-                FROM custom_shifts
-                '''
-            )
-        else:
-            connection.exec_driver_sql(
-                '''
-                INSERT INTO custom_shifts_new (id, shift_date, person, created_at, updated_at)
-                SELECT id, shift_date, person, created_at, updated_at
-                FROM custom_shifts
-                '''
-            )
-        connection.exec_driver_sql('DROP TABLE custom_shifts')
-        connection.exec_driver_sql('ALTER TABLE custom_shifts_new RENAME TO custom_shifts')
-    app_state.touch_data()
-    app.logger.info('Esquema actualizado: custom_shifts.person ahora permite NULL y note está disponible')
-
-
-def ensure_absence_schema():
-    """Asegura la clave primaria compuesta (person, start_date) en absences."""
-    inspector = db.inspect(db.engine)
-    if 'absences' not in inspector.get_table_names():
-        return
-
-    columns = {column['name'] for column in inspector.get_columns('absences')}
-    primary_key = inspector.get_pk_constraint('absences').get('constrained_columns') or []
-    expected_primary_key = ['person', 'start_date']
-
-    if columns >= {'person', 'start_date', 'end_date'} and primary_key == expected_primary_key:
-        return
-
-    with db.engine.begin() as connection:
-        connection.exec_driver_sql(
-            '''
-            CREATE TABLE absences_new (
-                person VARCHAR(50) NOT NULL,
-                start_date DATE NOT NULL,
-                end_date DATE NOT NULL,
-                created_at DATETIME,
-                updated_at DATETIME,
-                PRIMARY KEY (person, start_date)
-            )
-            '''
-        )
-        if 'absences' in inspector.get_table_names():
-            if 'id' in columns:
-                connection.exec_driver_sql(
-                    '''
-                    INSERT INTO absences_new (person, start_date, end_date, created_at, updated_at)
-                    SELECT person, start_date, end_date, created_at, updated_at
-                    FROM absences
-                    '''
-                )
-            else:
-                connection.exec_driver_sql(
-                    '''
-                    INSERT INTO absences_new (person, start_date, end_date, created_at, updated_at)
-                    SELECT person, start_date, end_date, created_at, updated_at
-                    FROM absences
-                    '''
-                )
-            connection.exec_driver_sql('DROP TABLE absences')
-        connection.exec_driver_sql('ALTER TABLE absences_new RENAME TO absences')
-    app_state.touch_data()
-    app.logger.info('Esquema actualizado: tabla absences migrada a clave primaria compuesta')
-
-
 @app.route(f'/{SECRET_PATH}/api/absences', methods=['GET', 'POST', 'DELETE'])
 def manage_absences():
     if request.method == 'GET':
@@ -304,14 +204,7 @@ def alexa_webhook():
     ).strip()
     app.logger.info('Alexa request type=%s intent=%s', request_type or '-', intent_name or '-')
     return jsonify(alexa_handler.handle_request(payload))
-
-
-@app.before_request
-def create_tables():
-    db.create_all()
-    ensure_custom_shift_schema()
-    ensure_absence_schema()
-    holidays.ensure_refresh_worker()
+register_startup(app, holidays, app_state)
 
 
 if __name__ == '__main__':
@@ -325,8 +218,5 @@ if __name__ == '__main__':
     app.logger.info('Rutas publicadas bajo el prefijo secreto /%s', SECRET_PATH)
     app.logger.info('Escuchando en http://%s:%s/%s', host, port, SECRET_PATH)
     with app.app_context():
-        db.create_all()
-        ensure_custom_shift_schema()
-        ensure_absence_schema()
-    holidays.ensure_refresh_worker()
+        initialize_runtime(app, holidays, app_state)
     app.run(host=host, port=port, debug=debug)
