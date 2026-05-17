@@ -33,7 +33,9 @@ class AlexaHandler:
         if not self._skill_id:
             return True
 
-        application = (payload or {}).get("context", {}).get("System", {}).get("application", {})
+        context_value = (payload or {}).get("context")
+        system_value = context_value.get("System") if isinstance(context_value, dict) else {}
+        application = system_value.get("application") if isinstance(system_value, dict) else {}
         if not isinstance(application, dict):
             return False
         request_skill_id = (application.get("applicationId") or "").strip()

@@ -23,6 +23,14 @@ HOLIDAY_REFRESH_SUCCESS_INTERVAL_SECONDS = 6 * 60 * 60
 HolidayEntry = dict[str, list[str]]
 HolidayMap = dict[str, HolidayEntry]
 
+# Cache key: (cache_version_prefix, year, month_int | "full_year")
+# - Element 0: cache version string (e.g. "junta-v2")
+# - Element 1: year as int (e.g. 2024)
+# - Element 2: month number as int for monthly keys (1-12), or the literal string "full_year"
+#              for annual/year-level cached data
+HolidayCacheKey = tuple[str, int, int | str]
+HolidayCache = dict[HolidayCacheKey, HolidayMap]
+
 
 class HolidayService:
     """Gestiona la consulta, caché y refresco en background de festivos."""
@@ -30,7 +38,7 @@ class HolidayService:
     def __init__(self, logger: Logger, cache_state: CacheState) -> None:
         self._logger = logger
         self._cache_state = cache_state
-        self._holiday_cache: dict[tuple[str, int, int | str], HolidayMap] = {}
+        self._holiday_cache: HolidayCache = {}
         self._holiday_cache_lock = Lock()
         self._holiday_refresh_thread: Thread | None = None
         self._holiday_refresh_thread_lock = Lock()
@@ -146,9 +154,7 @@ class HolidayService:
         )
         return holidays_by_date
 
-    def build_month_holiday_cache(
-        self, year: int, year_holidays: HolidayMap
-    ) -> dict[tuple[str, int, int], HolidayMap]:
+    def build_month_holiday_cache(self, year: int, year_holidays: HolidayMap) -> HolidayCache:
         """Construye la caché mensual completa a partir de los festivos anualizados."""
         monthly_cache = {}
 

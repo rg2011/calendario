@@ -341,8 +341,8 @@ def cmd_status(_: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_list_skills(_: argparse.Namespace) -> int:
-    _, smapi = create_clients()
+def cmd_list_skills(_args: object) -> int:
+    _env, smapi = create_clients()
     print(json.dumps(smapi.list_skills_for_vendor(), ensure_ascii=True, indent=2))
     return 0
 

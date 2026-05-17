@@ -25,8 +25,8 @@ def load_secret_path() -> str:
     return secret_path
 
 
-def build_payload(args: argparse.Namespace) -> dict:
-    base = {
+def build_payload(args: argparse.Namespace) -> dict[str, object]:
+    base: dict[str, object] = {
         "context": {
             "System": {
                 "application": {

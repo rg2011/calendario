@@ -117,7 +117,7 @@ class AbsenceService:
 
         absence = Absence.query.filter_by(person=person, start_date=start_date).first()
         if not absence:
-            absence = Absence(person=person, start_date=start_date)
+            absence = Absence(person=person, start_date=start_date)  # type: ignore[call-arg]
 
         absence.end_date = end_date
         db.session.add(absence)
