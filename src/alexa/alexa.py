@@ -298,7 +298,8 @@ class AlexaHandler:
             "response": response_body,
         }
 
-    def _format_date_for_speech(self, target_date: date) -> str:
+    def _format_date_for_speech(self, target_date: date, reference_year: int | None = None) -> str:
+        """Formatea una fecha para locución, incluyendo el año si no coincide con el año actual."""
         weekday_names = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
         month_names = {
             1: "enero",
@@ -315,11 +316,29 @@ class AlexaHandler:
             12: "diciembre",
         }
         weekday_name = weekday_names[target_date.weekday()]
-        return f"{weekday_name} {target_date.day} de {month_names[target_date.month]}"
+        month_name = month_names[target_date.month]
 
-    def _format_weekend_for_speech(self, target_dates: list[date]) -> str:
+        # Determinar si debemos incluir el año
+        year_to_check = (
+            reference_year if reference_year is not None else datetime.now(LOCAL_TZ).year
+        )
+        include_year = target_date.year != year_to_check
+
+        base_format = f"{weekday_name} {target_date.day} de {month_name}"
+        if include_year:
+            base_format += f" de {target_date.year}"
+
+        return base_format
+
+    def _format_weekend_for_speech(
+        self, target_dates: list[date], reference_year: int | None = None
+    ) -> str:
+        """Formatea un fin de semana para locución.
+
+        Incluye el año si no coincide con el año actual.
+        """
         saturday, sunday = target_dates
-        if saturday.month == sunday.month:
+        if saturday.month == sunday.month and saturday.year == sunday.year:
             month_names = {
                 1: "enero",
                 2: "febrero",
@@ -334,13 +353,25 @@ class AlexaHandler:
                 11: "noviembre",
                 12: "diciembre",
             }
+            # Determinar si debemos incluir el año (consistente con _format_date_for_speech)
+            year_to_check = (
+                reference_year if reference_year is not None else datetime.now(LOCAL_TZ).year
+            )
+            include_year = saturday.year != year_to_check
+
+            if include_year:
+                return (
+                    f"el fin de semana del sabado {saturday.day} "
+                    f"y domingo {sunday.day} de {month_names[saturday.month]} de {saturday.year}"
+                )
             return (
                 f"el fin de semana del sabado {saturday.day} "
                 f"y domingo {sunday.day} de {month_names[saturday.month]}"
             )
+        # Si los meses son diferentes o cruzan año, usar _format_date_for_speech para cada fecha
         return (
-            f"el fin de semana del {self._format_date_for_speech(saturday)} "
-            f"y {self._format_date_for_speech(sunday)}"
+            f"el fin de semana del {self._format_date_for_speech(saturday, reference_year)} "
+            f"y {self._format_date_for_speech(sunday, reference_year)}"
         )
 
     def _normalize_alexa_utterance(self, text: str) -> str:
