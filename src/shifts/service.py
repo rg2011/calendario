@@ -31,14 +31,14 @@ class ShiftService:
         if not rule:
             return None
 
-        if rule.algorithm == 'fijo':
+        if rule.algorithm == "fijo":
             return rule.person_fijo
 
-        if rule.algorithm == 'rotatorio':
+        if rule.algorithm == "rotatorio":
             if not rule.rotation_order or not rule.rotation_start_date:
                 return None
 
-            people_list = [p.strip() for p in rule.rotation_order.split(',') if p.strip()]
+            people_list = [p.strip() for p in rule.rotation_order.split(",") if p.strip()]
             if len(people_list) != 3:
                 return None
 
@@ -61,7 +61,9 @@ class ShiftService:
     ) -> tuple[str | None, bool, str | None, str | None]:
         """Obtiene el turno efectivo de un día, aplicando ausencias y custom shift."""
         default_person = self.get_default_shift_for_day(shift_date)
-        if self._absence_service.is_person_absent_on_date(default_person, shift_date, absent_people):
+        if self._absence_service.is_person_absent_on_date(
+            default_person, shift_date, absent_people
+        ):
             default_person = None
 
         custom = CustomShift.query.filter_by(shift_date=shift_date).first()
@@ -78,18 +80,20 @@ class ShiftService:
             [],
         )
         default_person = self.get_default_shift_for_day(shift_date)
-        if self._absence_service.is_person_absent_on_date(default_person, shift_date, absent_people):
+        if self._absence_service.is_person_absent_on_date(
+            default_person, shift_date, absent_people
+        ):
             default_person = None
         person, is_custom, note, custom_person = self.get_shift_for_day(shift_date, absent_people)
         return {
-            'date': shift_date,
-            'date_iso': shift_date.isoformat(),
-            'person': person,
-            'default_person': default_person,
-            'custom_person': custom_person,
-            'is_custom': is_custom,
-            'note': note,
-            'absent_people': absent_people,
+            "date": shift_date,
+            "date_iso": shift_date.isoformat(),
+            "person": person,
+            "default_person": default_person,
+            "custom_person": custom_person,
+            "is_custom": is_custom,
+            "note": note,
+            "absent_people": absent_people,
         }
 
     def list_rules(self) -> list[DayWeekRule]:
@@ -102,8 +106,8 @@ class ShiftService:
 
     def save_rule(self, data: dict[str, Any]) -> tuple[dict[str, Any], int]:
         """Crea o actualiza una regla semanal."""
-        day_of_week = data.get('day_of_week')
-        algorithm = data.get('algorithm')
+        day_of_week = data.get("day_of_week")
+        algorithm = data.get("algorithm")
 
         rule = DayWeekRule.query.filter_by(day_of_week=day_of_week).first()
         if not rule:
@@ -112,14 +116,14 @@ class ShiftService:
 
         rule.algorithm = algorithm
 
-        if algorithm == 'fijo':
-            rule.person_fijo = self._as_string(data.get('person_fijo'))
+        if algorithm == "fijo":
+            rule.person_fijo = self._as_string(data.get("person_fijo"))
             rule.rotation_order = None
             rule.rotation_start_date = None
-        elif algorithm == 'rotatorio':
+        elif algorithm == "rotatorio":
             rule.person_fijo = None
-            rule.rotation_order = self._as_string(data.get('rotation_order'))
-            start_date_str = self._as_string(data.get('rotation_start_date'))
+            rule.rotation_order = self._as_string(data.get("rotation_order"))
+            start_date_str = self._as_string(data.get("rotation_start_date"))
             rule.rotation_start_date = (
                 datetime.fromisoformat(start_date_str).date() if start_date_str else None
             )
@@ -127,27 +131,27 @@ class ShiftService:
         db.session.add(rule)
         db.session.commit()
         self._cache_state.touch_data()
-        return {'success': True, 'id': rule.id}, 200
+        return {"success": True, "id": rule.id}, 200
 
     def set_custom_shift(self, data: dict[str, Any]) -> tuple[dict[str, Any], int]:
         """Crea, actualiza o elimina un custom shift para una fecha concreta."""
-        shift_date_str = self._as_string(data.get('shift_date'))
-        raw_person = self._as_string(data.get('person')) or ''
+        shift_date_str = self._as_string(data.get("shift_date"))
+        raw_person = self._as_string(data.get("person")) or ""
         person = raw_person or None
-        note = self._as_string(data.get('note'))
+        note = self._as_string(data.get("note"))
 
         if not shift_date_str:
-            return {'success': False, 'error': 'Invalid data'}, 400
+            return {"success": False, "error": "Invalid data"}, 400
 
         shift_date = datetime.fromisoformat(shift_date_str).date()
-        should_delete = raw_person == 'clear'
+        should_delete = raw_person == "clear"
         if should_delete:
             person = None
 
         if person and person not in self._people:
-            return {'success': False, 'error': 'Persona no válida'}, 400
+            return {"success": False, "error": "Persona no válida"}, 400
         if person and self._absence_service.is_person_absent_on_date(person, shift_date):
-            return {'success': False, 'error': 'La persona está ausente en esa fecha'}, 400
+            return {"success": False, "error": "La persona está ausente en esa fecha"}, 400
 
         custom = CustomShift.query.filter_by(shift_date=shift_date).first()
 
@@ -167,7 +171,7 @@ class ShiftService:
             db.session.commit()
             self._cache_state.touch_data()
 
-        return {'success': True}, 200
+        return {"success": True}, 200
 
     def _as_string(self, value: object) -> str | None:
         if isinstance(value, str):

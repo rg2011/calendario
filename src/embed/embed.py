@@ -3,7 +3,8 @@ import locale
 import os
 import sys
 from datetime import date, datetime
-from typing import List, Protocol
+from typing import List
+
 import requests
 
 
@@ -15,10 +16,7 @@ class OpenEmbed:
     def __init__(self) -> None:
         self._api_url = os.environ.get("EMBEDDING_API_URL", "http://localhost:11434/v1")
         self._api_key = os.environ.get("EMBEDDING_API_KEY", "")
-        self._model_name = os.environ.get(
-            "EMBEDDING_MODEL",
-            "nomic-embed-text:latest"
-        )
+        self._model_name = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text:latest")
         # Ensure English locale for strftime
         locale.setlocale(locale.LC_TIME, "C")
 
@@ -61,14 +59,14 @@ def _print_embedding(embedding: List[float]) -> None:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Test OpenEmbed CLI for generating embeddings."
-    )
+    parser = argparse.ArgumentParser(description="Test OpenEmbed CLI for generating embeddings.")
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # embedFact command
     fact_parser = subparsers.add_parser("fact", help="Generate embedding for a date and fact")
-    fact_parser.add_argument("--date", type=str, default=None, help="Date in YYYY-MM-DD format (default: today)")
+    fact_parser.add_argument(
+        "--date", type=str, default=None, help="Date in YYYY-MM-DD format (default: today)"
+    )
     fact_parser.add_argument("text", nargs="?", default="", help="The fact/note text")
 
     # embedQuery command
@@ -77,9 +75,17 @@ if __name__ == "__main__":
 
     # Common options
     parser.add_argument("--model", type=str, default=None, help="Override EMBEDDING_MODEL env var")
-    parser.add_argument("--api-url", type=str, default=None, help="Override EMBEDDING_API_URL env var")
-    parser.add_argument("--api-key", type=str, default=None, help="Override EMBEDDING_API_KEY env var")
-    parser.add_argument("--uri", action="store_true", help="Print the embedding URI instead of generating embeddings")
+    parser.add_argument(
+        "--api-url", type=str, default=None, help="Override EMBEDDING_API_URL env var"
+    )
+    parser.add_argument(
+        "--api-key", type=str, default=None, help="Override EMBEDDING_API_KEY env var"
+    )
+    parser.add_argument(
+        "--uri",
+        action="store_true",
+        help="Print the embedding URI instead of generating embeddings",
+    )
 
     args = parser.parse_args()
 
@@ -102,7 +108,7 @@ if __name__ == "__main__":
         if not args.text:
             print("Error: Please provide a fact text.", file=sys.stderr)
             sys.exit(1)
-        
+
         if args.date:
             try:
                 target_date = datetime.strptime(args.date, "%Y-%m-%d").date()

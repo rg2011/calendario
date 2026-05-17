@@ -29,7 +29,7 @@ class CacheState(Protocol):
         self,
         resource_builder: Callable[..., str],
         version_names: tuple[str, ...],
-        cache_control: str = 'private, no-cache',
+        cache_control: str = "private, no-cache",
         include_current_day: bool = False,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Decora una vista Flask con soporte ETag y Last-Modified."""
@@ -42,12 +42,12 @@ def New() -> CacheState:
 
 
 __all__ = [
-    'CacheState',
-    'New',
-    'absences_cache_key',
-    'calendar_cache_key',
-    'current_month_cache_key',
-    'settings_cache_key',
+    "CacheState",
+    "New",
+    "absences_cache_key",
+    "calendar_cache_key",
+    "current_month_cache_key",
+    "settings_cache_key",
 ]
 
 # API pública reexportada:

@@ -49,29 +49,35 @@ class CalendarService:
             prev_year, prev_month = self.get_previous_month(year, month)
             prev_days_in_month = calendar.monthrange(prev_year, prev_month)[1]
             for day in range(prev_days_in_month - first_day_weekday + 1, prev_days_in_month + 1):
-                days_list.append({
-                    'date': date(prev_year, prev_month, day),
-                    'day_num': day,
-                    'month_type': 'prev',
-                })
+                days_list.append(
+                    {
+                        "date": date(prev_year, prev_month, day),
+                        "day_num": day,
+                        "month_type": "prev",
+                    }
+                )
 
         for day in range(1, calendar.monthrange(year, month)[1] + 1):
-            days_list.append({
-                'date': date(year, month, day),
-                'day_num': day,
-                'month_type': 'current',
-            })
+            days_list.append(
+                {
+                    "date": date(year, month, day),
+                    "day_num": day,
+                    "month_type": "current",
+                }
+            )
 
         total_days_shown = len(days_list)
         if total_days_shown % 7 != 0:
             days_to_add = 7 - (total_days_shown % 7)
             next_year, next_month = self.get_next_month(year, month)
             for day in range(1, days_to_add + 1):
-                days_list.append({
-                    'date': date(next_year, next_month, day),
-                    'day_num': day,
-                    'month_type': 'next',
-                })
+                days_list.append(
+                    {
+                        "date": date(next_year, next_month, day),
+                        "day_num": day,
+                        "month_type": "next",
+                    }
+                )
 
         return days_list
 
@@ -92,55 +98,59 @@ class CalendarService:
         next_year, next_month = self.get_next_month(year, month)
 
         days = self.get_month_days_full(year, month)
-        visible_holidays = self._holiday_provider.get_holidays_for_dates(day['date'] for day in days)
-        absences_by_date = self._absence_service.get_absences_for_dates(day['date'] for day in days)
+        visible_holidays = self._holiday_provider.get_holidays_for_dates(
+            day["date"] for day in days
+        )
+        absences_by_date = self._absence_service.get_absences_for_dates(day["date"] for day in days)
         self._logger.info(
-            'Render calendario %s-%02d con %s festivos detectados en dias visibles',
+            "Render calendario %s-%02d con %s festivos detectados en dias visibles",
             year,
             month,
             len(visible_holidays),
         )
 
         for day in days:
-            absent_people = absences_by_date.get(day['date'].isoformat(), [])
-            default_person = self._shift_service.get_default_shift_for_day(day['date'])
-            if self._absence_service.is_person_absent_on_date(default_person, day['date'], absent_people):
+            absent_people = absences_by_date.get(day["date"].isoformat(), [])
+            default_person = self._shift_service.get_default_shift_for_day(day["date"])
+            if self._absence_service.is_person_absent_on_date(
+                default_person, day["date"], absent_people
+            ):
                 default_person = None
             person, is_custom, note, custom_person = self._shift_service.get_shift_for_day(
-                day['date'],
+                day["date"],
                 absent_people,
             )
-            holiday_info = visible_holidays.get(day['date'].isoformat())
-            day['person'] = person
-            day['default_person'] = default_person
-            day['custom_person'] = custom_person
-            day['is_custom'] = is_custom
-            day['note'] = note
-            day['absent_people'] = absent_people
-            day['is_today'] = day['date'] == today
-            day['holiday_name'] = ' · '.join(holiday_info['names']) if holiday_info else None
-            day['is_holiday'] = bool(holiday_info)
+            holiday_info = visible_holidays.get(day["date"].isoformat())
+            day["person"] = person
+            day["default_person"] = default_person
+            day["custom_person"] = custom_person
+            day["is_custom"] = is_custom
+            day["note"] = note
+            day["absent_people"] = absent_people
+            day["is_today"] = day["date"] == today
+            day["holiday_name"] = " · ".join(holiday_info["names"]) if holiday_info else None
+            day["is_holiday"] = bool(holiday_info)
 
-        weeks = [days[index:index + 7] for index in range(0, len(days), 7)]
+        weeks = [days[index : index + 7] for index in range(0, len(days), 7)]
         month_options = [
-            {'value': month_number, 'label': MONTH_NAMES_ES[month_number]}
+            {"value": month_number, "label": MONTH_NAMES_ES[month_number]}
             for month_number in range(1, 13)
         ]
         current_year = today.year
         year_options = sorted({current_year - 1, current_year, current_year + 1, year})
 
         return {
-            'year': year,
-            'month': month,
-            'month_name': MONTH_NAMES_ES[month],
-            'month_options': month_options,
-            'year_options': year_options,
-            'holiday_reference_year': current_year,
-            'weeks': weeks,
-            'days_of_week': DAYS_OF_WEEK_ABBR,
-            'prev_url': calendar_url_builder(prev_year, prev_month),
-            'next_url': calendar_url_builder(next_year, next_month),
-            'people': self._people,
+            "year": year,
+            "month": month,
+            "month_name": MONTH_NAMES_ES[month],
+            "month_options": month_options,
+            "year_options": year_options,
+            "holiday_reference_year": current_year,
+            "weeks": weeks,
+            "days_of_week": DAYS_OF_WEEK_ABBR,
+            "prev_url": calendar_url_builder(prev_year, prev_month),
+            "next_url": calendar_url_builder(next_year, next_month),
+            "people": self._people,
         }
 
 

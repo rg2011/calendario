@@ -1,5 +1,6 @@
 from datetime import date
 from typing import List, Protocol
+
 from .embed import OpenEmbed
 
 

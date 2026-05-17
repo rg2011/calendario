@@ -11,10 +11,10 @@ from urllib.request import urlopen
 
 from src.httpcache import CacheState
 
-HOLIDAY_API_URL = 'https://datos.juntadeandalucia.es/api/v0/work-calendar/get/search_calendar'
-HOLIDAY_API_PROVINCE = 'SEVILLA'
-HOLIDAY_API_MUNICIPALITY = 'SEVILLA'
-HOLIDAY_CACHE_VERSION = 'junta-v2'
+HOLIDAY_API_URL = "https://datos.juntadeandalucia.es/api/v0/work-calendar/get/search_calendar"
+HOLIDAY_API_PROVINCE = "SEVILLA"
+HOLIDAY_API_MUNICIPALITY = "SEVILLA"
+HOLIDAY_CACHE_VERSION = "junta-v2"
 HOLIDAY_API_TIMEOUT_SECONDS = 8
 HOLIDAY_REFRESH_INITIAL_DELAY_SECONDS = 2
 HOLIDAY_REFRESH_MAX_BACKOFF_SECONDS = 30
@@ -41,7 +41,7 @@ class HolidayService:
             return payload
 
         if isinstance(payload, dict):
-            for key in ('results', 'items', 'records', 'data'):
+            for key in ("results", "items", "records", "data"):
                 value = payload.get(key)
                 if isinstance(value, list):
                     return value
@@ -53,7 +53,7 @@ class HolidayService:
 
     def parse_holiday_date(self, holiday: dict[str, Any]) -> date | None:
         """Extrae la fecha del registro con cierta tolerancia a variantes de clave."""
-        raw_date = holiday.get('dateformat') or holiday.get('startDate') or holiday.get('date')
+        raw_date = holiday.get("dateformat") or holiday.get("startDate") or holiday.get("date")
         if not raw_date:
             return None
 
@@ -70,7 +70,7 @@ class HolidayService:
             except ValueError:
                 continue
 
-        for fmt in ('%Y%m%d', '%d/%m/%Y', '%d-%m-%Y'):
+        for fmt in ("%Y%m%d", "%d/%m/%Y", "%d-%m-%Y"):
             try:
                 return datetime.strptime(raw_date, fmt).date()
             except ValueError:
@@ -80,34 +80,34 @@ class HolidayService:
 
     def extract_holiday_name(self, holiday: dict[str, Any]) -> str:
         """Obtiene el nombre visible del festivo desde la API de la Junta."""
-        for key in ('description', 'event', 'name', 'title'):
+        for key in ("description", "event", "name", "title"):
             value = holiday.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
-        return 'Festivo'
+        return "Festivo"
 
     def fetch_holidays_from_api(self, year: int) -> HolidayMap:
         """Consulta la API oficial y devuelve un mapa de fecha ISO a festivo."""
         params = {
-            'province': HOLIDAY_API_PROVINCE,
-            'municipality': HOLIDAY_API_MUNICIPALITY,
-            'year': str(year),
+            "province": HOLIDAY_API_PROVINCE,
+            "municipality": HOLIDAY_API_MUNICIPALITY,
+            "year": str(year),
         }
-        url = f'{HOLIDAY_API_URL}?{urlencode(params)}'
-        self._logger.info('Consultando API de festivos: %s', url)
+        url = f"{HOLIDAY_API_URL}?{urlencode(params)}"
+        self._logger.info("Consultando API de festivos: %s", url)
 
         try:
             with urlopen(url, timeout=HOLIDAY_API_TIMEOUT_SECONDS) as response:
                 if response.status != 200:
                     self._logger.warning(
-                        'Respuesta no satisfactoria al consultar festivos: %s',
+                        "Respuesta no satisfactoria al consultar festivos: %s",
                         response.status,
                     )
                     return {}
-                payload = json.loads(response.read().decode('utf-8'))
+                payload = json.loads(response.read().decode("utf-8"))
         except Exception as exc:
             self._logger.warning(
-                'Error consultando la API de festivos para %s: %s: %s',
+                "Error consultando la API de festivos para %s: %s: %s",
                 year,
                 type(exc).__name__,
                 exc,
@@ -115,37 +115,40 @@ class HolidayService:
             return {}
 
         rows = self.extract_holiday_rows(payload)
-        self._logger.info('API de festivos %s: %s registros brutos recibidos', year, len(rows))
+        self._logger.info("API de festivos %s: %s registros brutos recibidos", year, len(rows))
 
         holidays_by_date: HolidayMap = {}
         for holiday in rows:
             holiday_date = self.parse_holiday_date(holiday)
             holiday_name = self.extract_holiday_name(holiday)
-            holiday_type = holiday.get('type') or 'LABORAL'
+            holiday_type = holiday.get("type") or "LABORAL"
             if not holiday_date or not holiday_name:
                 continue
 
             holiday_entry = holidays_by_date.setdefault(
                 holiday_date.isoformat(),
-                {'names': [], 'scopes': []},
+                {"names": [], "scopes": []},
             )
-            if holiday_name not in holiday_entry['names']:
-                holiday_entry['names'].append(holiday_name)
-            if holiday_type not in holiday_entry['scopes']:
-                holiday_entry['scopes'].append(holiday_type)
+            if holiday_name not in holiday_entry["names"]:
+                holiday_entry["names"].append(holiday_name)
+            if holiday_type not in holiday_entry["scopes"]:
+                holiday_entry["scopes"].append(holiday_type)
 
         self._logger.info(
-            'Festivos anualizados %s: %s fechas unicas (%s)',
+            "Festivos anualizados %s: %s fechas unicas (%s)",
             year,
             len(holidays_by_date),
-            ', '.join(
-                f'{holiday_date}={holiday_info["names"]}'
+            ", ".join(
+                f"{holiday_date}={holiday_info['names']}"
                 for holiday_date, holiday_info in sorted(holidays_by_date.items())
-            ) or 'sin resultados',
+            )
+            or "sin resultados",
         )
         return holidays_by_date
 
-    def build_month_holiday_cache(self, year: int, year_holidays: HolidayMap) -> dict[tuple[str, int, int], HolidayMap]:
+    def build_month_holiday_cache(
+        self, year: int, year_holidays: HolidayMap
+    ) -> dict[tuple[str, int, int], HolidayMap]:
         """Construye la caché mensual completa a partir de los festivos anualizados."""
         monthly_cache = {}
 
@@ -160,7 +163,7 @@ class HolidayService:
         return monthly_cache
 
     def get_year_cache_key(self, year: int) -> tuple[str, int, str]:
-        return (HOLIDAY_CACHE_VERSION, year, 'full_year')
+        return (HOLIDAY_CACHE_VERSION, year, "full_year")
 
     def get_month_cache_key(self, year: int, month: int) -> tuple[str, int, int]:
         return (HOLIDAY_CACHE_VERSION, year, month)
@@ -186,25 +189,25 @@ class HolidayService:
         """Intenta refrescar la caché anual de festivos y devuelve True si tuvo éxito."""
         if year != date.today().year:
             self._logger.info(
-                'Se omite la recarga de festivos para %s porque no es el año en curso',
+                "Se omite la recarga de festivos para %s porque no es el año en curso",
                 year,
             )
             return False
 
         year_holidays = self.fetch_holidays_from_api(year)
         if not year_holidays:
-            self._logger.warning('No se pudieron obtener festivos para %s', year)
+            self._logger.warning("No se pudieron obtener festivos para %s", year)
             return False
 
         updated = self.update_holiday_cache(year, year_holidays)
         if updated:
             self._logger.info(
-                'Caché anual de festivos actualizada para %s: %s fechas',
+                "Caché anual de festivos actualizada para %s: %s fechas",
                 year,
                 len(year_holidays),
             )
         else:
-            self._logger.info('La caché anual de festivos para %s ya estaba al día', year)
+            self._logger.info("La caché anual de festivos para %s ya estaba al día", year)
         return True
 
     def holiday_refresh_worker(self) -> None:
@@ -226,7 +229,7 @@ class HolidayService:
                 continue
 
             self._logger.info(
-                'Reintentando recarga de festivos para %s en %s segundos',
+                "Reintentando recarga de festivos para %s en %s segundos",
                 current_year,
                 retry_delay,
             )
@@ -241,11 +244,11 @@ class HolidayService:
 
             self._holiday_refresh_thread = Thread(
                 target=self.holiday_refresh_worker,
-                name='holiday-refresh',
+                name="holiday-refresh",
                 daemon=True,
             )
             self._holiday_refresh_thread.start()
-            self._logger.info('Worker de recarga de festivos iniciado')
+            self._logger.info("Worker de recarga de festivos iniciado")
 
     def get_month_holidays(self, year: int, month: int) -> HolidayMap:
         """Devuelve los festivos de un mes usando la caché en memoria."""
@@ -258,14 +261,14 @@ class HolidayService:
 
         if month_holidays is None:
             self._logger.info(
-                'Festivos %s-%02d no disponibles en cache; devolviendo calendario sin festivos',
+                "Festivos %s-%02d no disponibles en cache; devolviendo calendario sin festivos",
                 year,
                 month,
             )
             return {}
 
         self._logger.info(
-            'Festivos %s-%02d obtenidos de cache mensual: %s fechas',
+            "Festivos %s-%02d obtenidos de cache mensual: %s fechas",
             year,
             month,
             len(month_holidays),

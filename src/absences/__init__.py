@@ -2,9 +2,9 @@ from .serializers import serialize_absence
 from .service import AbsenceService, New
 
 __all__ = [
-    'AbsenceService',
-    'New',
-    'serialize_absence',
+    "AbsenceService",
+    "New",
+    "serialize_absence",
 ]
 
 # API pública reexportada:

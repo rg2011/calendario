@@ -33,8 +33,8 @@ def New(logger: Logger, cache_state: CacheState) -> HolidayProvider:
 
 
 __all__ = [
-    'HolidayProvider',
-    'New',
+    "HolidayProvider",
+    "New",
 ]
 
 # API pública reexportada:

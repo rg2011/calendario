@@ -2,9 +2,9 @@ from .serializers import serialize_rule
 from .service import New, ShiftService
 
 __all__ = [
-    'New',
-    'ShiftService',
-    'serialize_rule',
+    "New",
+    "ShiftService",
+    "serialize_rule",
 ]
 
 # API pública reexportada:

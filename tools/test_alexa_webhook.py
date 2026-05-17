@@ -9,7 +9,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_SKILL_ID = "amzn1.ask.skill.69beb30b-39d1-40bd-8836-d36afcea1f61"
 if str(ROOT_DIR) not in sys.path:
@@ -80,16 +79,18 @@ def main(argv: list[str] | None = None) -> int:
 
     client = app.test_client()
     response = client.post(f"/{secret_path}/alexa", json=payload)
-    print(json.dumps(
-        {
-            "status_code": response.status_code,
-            "path": f"/{secret_path}/alexa",
-            "request": payload,
-            "response": response.get_json(),
-        },
-        ensure_ascii=True,
-        indent=2,
-    ))
+    print(
+        json.dumps(
+            {
+                "status_code": response.status_code,
+                "path": f"/{secret_path}/alexa",
+                "request": payload,
+                "response": response.get_json(),
+            },
+            ensure_ascii=True,
+            indent=2,
+        )
+    )
     return 0
 
 

@@ -1,1 +1,1 @@
-from .models import db, DayWeekRule, CustomShift, Absence
+from .models import Absence, CustomShift, DayWeekRule, db

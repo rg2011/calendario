@@ -2,10 +2,10 @@ from .constants import DAYS_OF_WEEK_ABBR, MONTH_NAMES_ES
 from .service import CalendarService, New
 
 __all__ = [
-    'CalendarService',
-    'DAYS_OF_WEEK_ABBR',
-    'MONTH_NAMES_ES',
-    'New',
+    "CalendarService",
+    "DAYS_OF_WEEK_ABBR",
+    "MONTH_NAMES_ES",
+    "New",
 ]
 
 # API pública reexportada:
