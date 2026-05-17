@@ -1,21 +1,23 @@
-from flask import Flask, render_template, request, url_for, jsonify, send_from_directory, make_response
-from datetime import datetime, timedelta, date, timezone
-from zoneinfo import ZoneInfo
-from urllib.parse import urlencode
-from urllib.request import urlopen
-from functools import wraps
-from hashlib import sha256
-from threading import Lock, Thread
-import unicodedata
-import calendar
+from flask import Flask, render_template, request, url_for, jsonify, send_from_directory
+from datetime import datetime, date
 import json
 import logging
 import os
-import re
-import time
 
+from src.alexa import New as NewAlexaHandler
 from dotenv import load_dotenv
-from src.models import db, DayWeekRule, CustomShift, Absence
+from src.absences import New as NewAbsenceService, serialize_absence
+from src.calendar import New as NewCalendarService
+from src.holidays import New as NewHolidayProvider
+from src.httpcache import (
+    New as NewHttpCache,
+    absences_cache_key,
+    calendar_cache_key,
+    current_month_cache_key,
+    settings_cache_key,
+)
+from src.models import db, Absence
+from src.shifts import New as NewShiftService, serialize_rule
 
 load_dotenv()
 
@@ -34,1036 +36,50 @@ db.init_app(app)
 
 PEOPLE = ['Juanmi', 'Rafa', 'Ana']
 ALEXA_SKILL_ID = os.environ.get('ALEXA_SKILL_ID', '').strip()
-HOLIDAY_API_URL = 'https://datos.juntadeandalucia.es/api/v0/work-calendar/get/search_calendar'
-HOLIDAY_API_PROVINCE = 'SEVILLA'
-HOLIDAY_API_MUNICIPALITY = 'SEVILLA'
-HOLIDAY_CACHE_VERSION = 'junta-v2'
-HOLIDAY_API_TIMEOUT_SECONDS = 8
-HOLIDAY_REFRESH_INITIAL_DELAY_SECONDS = 2
-HOLIDAY_REFRESH_MAX_BACKOFF_SECONDS = 30
-HOLIDAY_REFRESH_SUCCESS_INTERVAL_SECONDS = 6 * 60 * 60
-holiday_cache = {}
-holiday_cache_lock = Lock()
-holiday_refresh_thread = None
-holiday_refresh_thread_lock = Lock()
 
-MONTH_NAMES_ES = {
-    1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
-    7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
-}
-
-
-class AppState:
-    """Mantiene versiones en memoria para revalidación HTTP condicional."""
-
-    def __init__(self):
-        boot_time = self._now()
-        self._versions = {
-            'app': boot_time,
-            'data': boot_time,
-            'holidays': boot_time,
-        }
-
-    def _now(self):
-        return datetime.now(timezone.utc)
-
-    def _local_now(self):
-        return datetime.now().astimezone()
-
-    def touch(self, *names):
-        current_time = self._now()
-        for name in names:
-            self._versions[name] = current_time
-
-    def touch_data(self):
-        self.touch('data')
-
-    def touch_holidays(self):
-        self.touch('holidays')
-
-    def current_day_snapshot(self):
-        local_now = self._local_now()
-        local_day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-        return local_now.date().isoformat(), local_day_start.astimezone(timezone.utc)
-
-    def last_modified(self, *names, floor=None):
-        version_names = names or ('app',)
-        current_last_modified = max(self._versions[name] for name in version_names)
-        if floor is not None and floor > current_last_modified:
-            return floor
-        return current_last_modified
-
-    def etag_for(self, resource_key, *names, extra_parts=None):
-        payload = [str(resource_key)]
-        for name in names:
-            payload.append(f'{name}={self._versions[name].isoformat(timespec="microseconds")}')
-        if extra_parts:
-            payload.extend(str(part) for part in extra_parts)
-        digest = sha256('|'.join(payload).encode('utf-8')).hexdigest()
-        return f'calendario-{digest}'
-
-    def is_not_modified(self, etag, last_modified):
-        if_none_match = request.headers.get('If-None-Match')
-        if if_none_match:
-            candidate_tags = {item.strip() for item in if_none_match.split(',') if item.strip()}
-            return '*' in candidate_tags or etag in candidate_tags or f'"{etag}"' in candidate_tags
-
-        if_modified_since = request.if_modified_since
-        if if_modified_since is not None:
-            last_modified_utc = last_modified.astimezone(timezone.utc).replace(microsecond=0)
-            if if_modified_since >= last_modified_utc:
-                return True
-
-        return False
-
-    def cached_view(
-        self,
-        resource_builder,
-        version_names,
-        cache_control='private, no-cache',
-        include_current_day=False,
-    ):
-        def decorator(view_func):
-            @wraps(view_func)
-            def wrapped(*args, **kwargs):
-                resource_key = resource_builder(*args, **kwargs)
-                etag_parts = []
-                last_modified_floor = None
-                if include_current_day:
-                    current_day_token, current_day_start = self.current_day_snapshot()
-                    etag_parts.append(f'day={current_day_token}')
-                    last_modified_floor = current_day_start
-
-                last_modified = self.last_modified(*version_names, floor=last_modified_floor)
-                etag = self.etag_for(resource_key, *version_names, extra_parts=etag_parts)
-
-                if self.is_not_modified(etag, last_modified):
-                    response = make_response('', 304)
-                else:
-                    response = make_response(view_func(*args, **kwargs))
-
-                response.set_etag(etag)
-                response.last_modified = last_modified
-                response.headers['Cache-Control'] = cache_control
-                return response
-
-            return wrapped
-
-        return decorator
-
-
-app_state = AppState()
-
-
-def get_week_start(target_date):
-    """Devuelve el lunes de la semana de una fecha."""
-    return target_date - timedelta(days=target_date.weekday())
-
-
-def get_default_shift_for_day(shift_date):
-    """
-    Obtiene el turno por defecto de un día según su regla.
-    Retorna la persona o None si no hay asignación aplicable.
-    """
-    day_of_week = shift_date.weekday()  # 0=lunes, 6=domingo
-    rule = DayWeekRule.query.filter_by(day_of_week=day_of_week).first()
-
-    if not rule:
-        return None
-
-    if rule.algorithm == 'fijo':
-        return rule.person_fijo
-
-    if rule.algorithm == 'rotatorio':
-        if not rule.rotation_order or not rule.rotation_start_date:
-            return None
-
-        people_list = [p.strip() for p in rule.rotation_order.split(',') if p.strip()]
-        if len(people_list) != 3:
-            return None
-
-        start_week = get_week_start(rule.rotation_start_date)
-        shift_week = get_week_start(shift_date)
-
-        if shift_week < start_week:
-            return None
-
-        weeks_diff = (shift_week - start_week).days // 7
-        person_index = weeks_diff % len(people_list)
-        return people_list[person_index]
-
-    return None
-
-
-def get_previous_month(year, month):
-    """Devuelve el mes anterior como tupla (year, month)."""
-    if month == 1:
-        return year - 1, 12
-    return year, month - 1
-
-
-def get_next_month(year, month):
-    """Devuelve el mes siguiente como tupla (year, month)."""
-    if month == 12:
-        return year + 1, 1
-    return year, month + 1
-
-
-def serialize_rule(rule):
-    """Serializa una regla para respuestas JSON o plantillas."""
-    return {
-        'id': rule.id,
-        'day_of_week': rule.day_of_week,
-        'algorithm': rule.algorithm,
-        'person_fijo': rule.person_fijo,
-        'rotation_order': rule.rotation_order,
-        'rotation_start_date': rule.rotation_start_date.isoformat() if rule.rotation_start_date else None,
-    }
-
-
-def serialize_absence(absence):
-    """Serializa una ausencia para respuestas JSON o plantillas."""
-    return {
-        'start_date': absence.start_date.isoformat(),
-        'end_date': absence.end_date.isoformat(),
-        'person': absence.person,
-    }
-
-
-def month_date_range(year, month):
-    """Devuelve la primera y última fecha de un mes."""
-    last_day = calendar.monthrange(year, month)[1]
-    return date(year, month, 1), date(year, month, last_day)
-
-
-def extract_holiday_rows(payload):
-    """Normaliza la respuesta de la API a una lista de registros."""
-    if isinstance(payload, list):
-        return payload
-
-    if isinstance(payload, dict):
-        for key in ('results', 'items', 'records', 'data'):
-            value = payload.get(key)
-            if isinstance(value, list):
-                return value
-        for value in payload.values():
-            if isinstance(value, list) and all(isinstance(item, dict) for item in value):
-                return value
-
-    return []
-
-
-def parse_holiday_date(holiday):
-    """Extrae la fecha del registro con cierta tolerancia a variantes de clave."""
-    raw_date = holiday.get('dateformat') or holiday.get('startDate') or holiday.get('date')
-    if not raw_date:
-        return None
-
-    if isinstance(raw_date, int):
-        raw_date = str(raw_date)
-
-    if not isinstance(raw_date, str):
-        return None
-
-    raw_date = raw_date.strip()
-    for candidate in (raw_date[:10], raw_date):
-        try:
-            return date.fromisoformat(candidate)
-        except ValueError:
-            continue
-
-    for fmt in ('%Y%m%d', '%d/%m/%Y', '%d-%m-%Y'):
-        try:
-            return datetime.strptime(raw_date, fmt).date()
-        except ValueError:
-            continue
-
-    return None
-
-
-def extract_holiday_name(holiday):
-    """Obtiene el nombre visible del festivo desde la API de la Junta."""
-    for key in ('description', 'event', 'name', 'title'):
-        value = holiday.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return 'Festivo'
-
-
-def fetch_holidays_from_api(year):
-    """
-    Consulta la API oficial de la Junta y devuelve un dict por fecha con nombres y ámbitos.
-    Solo se usa para el año en curso.
-    """
-    params = {
-        'province': HOLIDAY_API_PROVINCE,
-        'municipality': HOLIDAY_API_MUNICIPALITY,
-        'year': str(year),
-    }
-    url = f'{HOLIDAY_API_URL}?{urlencode(params)}'
-    app.logger.info('Consultando API de festivos: %s', url)
-
-    try:
-        with urlopen(url, timeout=HOLIDAY_API_TIMEOUT_SECONDS) as response:
-            if response.status != 200:
-                app.logger.warning('Respuesta no satisfactoria al consultar festivos: %s', response.status)
-                return {}
-            payload = json.loads(response.read().decode('utf-8'))
-    except Exception as exc:
-        app.logger.warning(
-            'Error consultando la API de festivos para %s: %s: %s',
-            year,
-            type(exc).__name__,
-            exc,
-        )
-        return {}
-
-    rows = extract_holiday_rows(payload)
-    app.logger.info('API de festivos %s: %s registros brutos recibidos', year, len(rows))
-
-    holidays_by_date = {}
-    for holiday in rows:
-        holiday_date = parse_holiday_date(holiday)
-        holiday_name = extract_holiday_name(holiday)
-        holiday_type = holiday.get('type') or 'LABORAL'
-        if not holiday_date or not holiday_name:
-            continue
-
-        holiday_entry = holidays_by_date.setdefault(
-            holiday_date.isoformat(),
-            {'names': [], 'scopes': []}
-        )
-        if holiday_name not in holiday_entry['names']:
-            holiday_entry['names'].append(holiday_name)
-        if holiday_type not in holiday_entry['scopes']:
-            holiday_entry['scopes'].append(holiday_type)
-
-    app.logger.info(
-        'Festivos anualizados %s: %s fechas unicas (%s)',
-        year,
-        len(holidays_by_date),
-        ', '.join(
-            f'{holiday_date}={holiday_info["names"]}'
-            for holiday_date, holiday_info in sorted(holidays_by_date.items())
-        ) or 'sin resultados'
-    )
-    return holidays_by_date
-
-
-def build_month_holiday_cache(year, year_holidays):
-    """Construye la caché mensual completa a partir de los festivos anualizados."""
-    monthly_cache = {}
-
-    for month in range(1, 13):
-        month_start, month_end = month_date_range(year, month)
-        monthly_cache[(HOLIDAY_CACHE_VERSION, year, month)] = {
-            holiday_date: holiday_info
-            for holiday_date, holiday_info in year_holidays.items()
-            if month_start <= date.fromisoformat(holiday_date) <= month_end
-        }
-
-    return monthly_cache
-
-
-def get_year_cache_key(year):
-    return (HOLIDAY_CACHE_VERSION, year, 'full_year')
-
-
-def get_month_cache_key(year, month):
-    return (HOLIDAY_CACHE_VERSION, year, month)
-
-
-def get_cached_year_holidays(year):
-    with holiday_cache_lock:
-        return holiday_cache.get(get_year_cache_key(year))
-
-
-def update_holiday_cache(year, year_holidays):
-    with holiday_cache_lock:
-        year_cache_key = get_year_cache_key(year)
-        current_year_holidays = holiday_cache.get(year_cache_key)
-        if current_year_holidays == year_holidays:
-            return False
-
-        holiday_cache[year_cache_key] = year_holidays
-        holiday_cache.update(build_month_holiday_cache(year, year_holidays))
-
-    app_state.touch_holidays()
-    return True
-
-
-def refresh_holiday_cache_for_year(year):
-    """Intenta refrescar la caché anual de festivos y devuelve True si tuvo éxito."""
-    if year != date.today().year:
-        app.logger.info('Se omite la recarga de festivos para %s porque no es el año en curso', year)
-        return False
-
-    year_holidays = fetch_holidays_from_api(year)
-    if not year_holidays:
-        app.logger.warning('No se pudieron obtener festivos para %s', year)
-        return False
-
-    updated = update_holiday_cache(year, year_holidays)
-    if updated:
-        app.logger.info('Caché anual de festivos actualizada para %s: %s fechas', year, len(year_holidays))
-    else:
-        app.logger.info('La caché anual de festivos para %s ya estaba al día', year)
-    return True
-
-
-def calendar_cache_key(year, month):
-    return f'calendar:{year:04d}-{month:02d}'
-
-
-def current_month_cache_key():
-    today = date.today()
-    return calendar_cache_key(today.year, today.month)
-
-
-def settings_cache_key():
-    return 'settings'
-
-
-def absences_cache_key():
-    return 'absences'
-
-
-def holiday_refresh_worker():
-    """Mantiene la caché de festivos actualizada sin bloquear peticiones."""
-    retry_delay = HOLIDAY_REFRESH_INITIAL_DELAY_SECONDS
-
-    while True:
-        current_year = date.today().year
-        has_cache = get_cached_year_holidays(current_year) is not None
-
-        success = refresh_holiday_cache_for_year(current_year)
-        if success:
-            retry_delay = HOLIDAY_REFRESH_INITIAL_DELAY_SECONDS
-            time.sleep(HOLIDAY_REFRESH_SUCCESS_INTERVAL_SECONDS)
-            continue
-
-        if has_cache:
-            time.sleep(HOLIDAY_REFRESH_SUCCESS_INTERVAL_SECONDS)
-            continue
-
-        app.logger.info(
-            'Reintentando recarga de festivos para %s en %s segundos',
-            current_year,
-            retry_delay,
-        )
-        time.sleep(retry_delay)
-        retry_delay = min(retry_delay * 2, HOLIDAY_REFRESH_MAX_BACKOFF_SECONDS)
-
-
-def ensure_holiday_refresh_worker():
-    global holiday_refresh_thread
-
-    with holiday_refresh_thread_lock:
-        if holiday_refresh_thread and holiday_refresh_thread.is_alive():
-            return
-
-        holiday_refresh_thread = Thread(
-            target=holiday_refresh_worker,
-            name='holiday-refresh',
-            daemon=True,
-        )
-        holiday_refresh_thread.start()
-        app.logger.info('Worker de recarga de festivos iniciado')
-
-
-def get_month_holidays(year, month):
-    """
-    Devuelve los festivos de un mes usando caché en memoria.
-    Solo consulta la API para meses del año en curso.
-    """
-    if year != date.today().year:
-        return {}
-
-    cache_key = get_month_cache_key(year, month)
-    with holiday_cache_lock:
-        month_holidays = holiday_cache.get(cache_key)
-
-    if month_holidays is None:
-        app.logger.info('Festivos %s-%02d no disponibles en cache; devolviendo calendario sin festivos', year, month)
-        return {}
-
-    app.logger.info(
-        'Festivos %s-%02d obtenidos de cache mensual: %s fechas',
-        year,
-        month,
-        len(month_holidays)
-    )
-    return month_holidays
-
-
-def get_holidays_for_dates(dates_to_check):
-    """Obtiene festivos para todas las fechas visibles del calendario."""
-    holidays = {}
-    visible_months = sorted({(day.year, day.month) for day in dates_to_check})
-
-    for year, month in visible_months:
-        holidays.update(get_month_holidays(year, month))
-
-    return holidays
-
-
-def get_month_days_full(year, month):
-    """Retorna una lista de objetos dict con fecha, día de semana y mes (prev/current/next)"""
-    days_list = []
-    
-    # Agregar últimos días del mes anterior
-    first_day_weekday = datetime(year, month, 1).weekday()  # 0=lunes
-    if first_day_weekday > 0:
-        prev_year, prev_month = get_previous_month(year, month)
-        
-        prev_days_in_month = calendar.monthrange(prev_year, prev_month)[1]
-        for day in range(prev_days_in_month - first_day_weekday + 1, prev_days_in_month + 1):
-            days_list.append({
-                'date': date(prev_year, prev_month, day),
-                'day_num': day,
-                'month_type': 'prev'
-            })
-    
-    # Agregar días del mes actual
-    for day in range(1, calendar.monthrange(year, month)[1] + 1):
-        days_list.append({
-            'date': date(year, month, day),
-            'day_num': day,
-            'month_type': 'current'
-        })
-    
-    # Agregar primeros días del mes siguiente
-    total_days_shown = len(days_list)
-    if total_days_shown % 7 != 0:
-        days_to_add = 7 - (total_days_shown % 7)
-        next_year, next_month = get_next_month(year, month)
-        
-        for day in range(1, days_to_add + 1):
-            days_list.append({
-                'date': date(next_year, next_month, day),
-                'day_num': day,
-                'month_type': 'next'
-            })
-    
-    return days_list
-
-
-def get_absences_for_dates(dates_to_check):
-    """Devuelve un mapa fecha -> lista de personas ausentes para las fechas visibles."""
-    dates = list(dates_to_check)
-    if not dates:
-        return {}
-
-    min_date = min(dates)
-    max_date = max(dates)
-    absences = (
-        Absence.query
-        .filter(Absence.start_date <= max_date, Absence.end_date >= min_date)
-        .order_by(Absence.start_date, Absence.person)
-        .all()
-    )
-
-    absences_by_date = {target_date.isoformat(): [] for target_date in dates}
-    for absence in absences:
-        current = max(absence.start_date, min_date)
-        last = min(absence.end_date, max_date)
-        while current <= last:
-            people = absences_by_date.setdefault(current.isoformat(), [])
-            if absence.person not in people:
-                people.append(absence.person)
-            current += timedelta(days=1)
-
-    return absences_by_date
-
-
-def is_person_absent_on_date(person, shift_date, absent_people=None):
-    """Indica si una persona está ausente en una fecha concreta."""
-    if not person:
-        return False
-
-    if absent_people is not None:
-        return person in absent_people
-
-    return (
-        Absence.query
-        .filter_by(person=person)
-        .filter(Absence.start_date <= shift_date, Absence.end_date >= shift_date)
-        .first()
-        is not None
-    )
-
-
-def get_shift_for_day(shift_date, absent_people=None):
-    """
-    Obtiene el turno asignado para un día específico.
-    Primero verifica si hay customización, luego aplica la regla.
-    Retorna tupla: (effective_person, is_custom, note, custom_person)
-    """
-    default_person = get_default_shift_for_day(shift_date)
-    if is_person_absent_on_date(default_person, shift_date, absent_people):
-        default_person = None
-
-    custom = CustomShift.query.filter_by(shift_date=shift_date).first()
-    if custom:
-        effective_person = custom.person if custom.person else default_person
-        return effective_person, True, custom.note, custom.person
-
-    return default_person, False, None, None
-
-
-def get_shift_summary_for_date(shift_date):
-    """Resume el estado de turno para una fecha concreta."""
-    absent_people = get_absences_for_dates([shift_date]).get(shift_date.isoformat(), [])
-    default_person = get_default_shift_for_day(shift_date)
-    if is_person_absent_on_date(default_person, shift_date, absent_people):
-        default_person = None
-    person, is_custom, note, custom_person = get_shift_for_day(shift_date, absent_people)
-    return {
-        'date': shift_date,
-        'date_iso': shift_date.isoformat(),
-        'person': person,
-        'default_person': default_person,
-        'custom_person': custom_person,
-        'is_custom': is_custom,
-        'note': note,
-        'absent_people': absent_people,
-    }
-
-
-# La zona horaria del calendario es España. Usarla aquí evita que
-# "hoy" se resuelva mal cuando el servidor corre en UTC.
-LOCAL_TZ = ZoneInfo('Europe/Madrid')
-
-
-def resolve_simple_alexa_date(slot_value, today=None):
-    """
-    Resuelve un subconjunto inicial de AMAZON.DATE.
-
-    Soportado:
-    - PRESENT_REF
-    - YYYY-MM-DD
-    - XXXX-MM-DD
-    """
-    if not slot_value:
-        return None, 'No has indicado ninguna fecha.'
-
-    today = today or datetime.now(LOCAL_TZ).date()
-    raw = slot_value.strip()
-
-    if raw == 'PRESENT_REF':
-        return {'kind': 'date', 'date': today}, None
-
-    if len(raw) == 10 and raw[:4].isdigit() and raw[4] == '-' and raw[7] == '-':
-        try:
-            return {'kind': 'date', 'date': datetime.fromisoformat(raw).date()}, None
-        except ValueError:
-            return None, 'No he podido interpretar esa fecha.'
-
-    if raw.startswith('XXXX-') and len(raw) == 10:
-        try:
-            month = int(raw[5:7])
-            day = int(raw[8:10])
-            candidate = date(today.year, month, day)
-        except ValueError:
-            return None, 'No he podido interpretar esa fecha.'
-        if candidate < today:
-            try:
-                candidate = date(today.year + 1, month, day)
-            except ValueError:
-                return None, 'No he podido interpretar esa fecha.'
-        return {'kind': 'date', 'date': candidate}, None
-
-    weekend_match = re.fullmatch(r'(\d{4})-W(\d{2})-WE', raw)
-    if weekend_match:
-        year = int(weekend_match.group(1))
-        week = int(weekend_match.group(2))
-        try:
-            saturday = date.fromisocalendar(year, week, 6)
-            sunday = date.fromisocalendar(year, week, 7)
-        except ValueError:
-            return None, 'No he podido interpretar ese fin de semana.'
-        return {
-            'kind': 'weekend',
-            'dates': [saturday, sunday],
-        }, None
-
-    return None, (
-        'Todavia no soporte ese formato de fecha. '
-        'Por ahora prueba con hoy o con una fecha concreta como el quince de mayo.'
-    )
-
-
-def format_date_for_speech(target_date):
-    weekday_names = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
-    month_names = {
-        1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril', 5: 'mayo', 6: 'junio',
-        7: 'julio', 8: 'agosto', 9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
-    }
-    weekday_name = weekday_names[target_date.weekday()]
-    return f'{weekday_name} {target_date.day} de {month_names[target_date.month]}'
-
-
-def format_weekend_for_speech(target_dates):
-    saturday, sunday = target_dates
-    if saturday.month == sunday.month:
-        month_names = {
-            1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril', 5: 'mayo', 6: 'junio',
-            7: 'julio', 8: 'agosto', 9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
-        }
-        return (
-            f'el fin de semana del sabado {saturday.day} '
-            f'y domingo {sunday.day} de {month_names[saturday.month]}'
-        )
-    return (
-        f'el fin de semana del {format_date_for_speech(saturday)} '
-        f'y {format_date_for_speech(sunday)}'
-    )
-
-
-def _join_people_for_speech(people):
-    if not people:
-        return ''
-    if len(people) == 1:
-        return people[0]
-    if len(people) == 2:
-        return f'{people[0]} y {people[1]}'
-    return f"{', '.join(people[:-1])} y {people[-1]}"
-
-
-def get_shift_summary_for_target(resolved_target):
-    if resolved_target['kind'] == 'date':
-        return {
-            'kind': 'date',
-            'summary': get_shift_summary_for_date(resolved_target['date']),
-        }
-
-    daily_summaries = [get_shift_summary_for_date(target_date) for target_date in resolved_target['dates']]
-    people = []
-    for summary in daily_summaries:
-        person = summary.get('person')
-        if person and person not in people:
-            people.append(person)
-    notes = [
-        {
-            'date': summary['date'],
-            'speech_date': format_date_for_speech(summary['date']),
-            'note': summary['note'].strip(),
-        }
-        for summary in daily_summaries
-        if (summary.get('note') or '').strip()
-    ]
-    return {
-        'kind': 'weekend',
-        'dates': resolved_target['dates'],
-        'daily_summaries': daily_summaries,
-        'people': people,
-        'notes': notes,
-    }
-
-
-def _format_enumerated_notes_for_speech(notes):
-    if not notes:
-        return ''
-    note_parts = [f"{note['speech_date']}: {note['note']}" for note in notes]
-    if len(note_parts) == 1:
-        return note_parts[0]
-    return '; '.join(note_parts)
-
-
-def alexa_plain_text_response(text, should_end_session=True, reprompt_text=None):
-    response_body = {
-        'outputSpeech': {
-            'type': 'PlainText',
-            'text': text,
-        },
-        'shouldEndSession': should_end_session,
-    }
-    if reprompt_text is not None:
-        response_body['reprompt'] = {
-            'outputSpeech': {
-                'type': 'PlainText',
-                'text': reprompt_text,
-            }
-        }
-    return {
-        'version': '1.0',
-        'response': response_body,
-    }
-
-
-def verify_alexa_skill_id(payload):
-    if not ALEXA_SKILL_ID:
-        return True
-
-    application = (
-        (payload or {})
-        .get('context', {})
-        .get('System', {})
-        .get('application', {})
-    )
-    request_skill_id = (application.get('applicationId') or '').strip()
-    return request_skill_id == ALEXA_SKILL_ID
-
-
-# --- Conversation helpers ---------------------------------------------------
-
-_CONVERSATION_REPROMPT = '¿Quieres consultar otra fecha? Dime el día que quieras saber.'
-_ALEXA_FAREWELL_UTTERANCES = {
-    'adios',
-    'hasta luego',
-    'nos vemos',
-    'salir',
-    'cierra',
-    'gracias',
-    'cancela',
-    'cancelar',
-    'basta',
-    'para ya',
-}
-
-
-def _conversational_response(text):
-    """Returns a response that keeps the Alexa session open with a reprompt."""
-    return alexa_plain_text_response(text, should_end_session=False, reprompt_text=_CONVERSATION_REPROMPT)
-
-
-def _normalize_alexa_utterance(text):
-    if not text:
-        return ''
-    normalized = unicodedata.normalize('NFD', text.strip().lower())
-    ascii_like = ''.join(char for char in normalized if unicodedata.category(char) != 'Mn')
-    cleaned = ''.join(char if char.isalnum() or char.isspace() else ' ' for char in ascii_like)
-    return ' '.join(cleaned.split())
-
-
-def _extract_alexa_transcript(payload):
-    request_envelope = (payload or {}).get('request') or {}
-    intent = request_envelope.get('intent') or {}
-    candidate_values = [
-        request_envelope.get('transcript'),
-        request_envelope.get('inputTranscript'),
-        request_envelope.get('utterance'),
-        intent.get('transcript'),
-        intent.get('inputTranscript'),
-        intent.get('utterance'),
-    ]
-    for value in candidate_values:
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ''
-
-
-def _should_end_session_for_fallback(payload):
-    transcript = _normalize_alexa_utterance(_extract_alexa_transcript(payload))
-    if not transcript:
-        return False
-    transcript_tokens = transcript.split()
-    transcript_token_count = len(transcript_tokens)
-    for farewell in _ALEXA_FAREWELL_UTTERANCES:
-        farewell_tokens = farewell.split()
-        farewell_token_count = len(farewell_tokens)
-        if farewell_token_count == 0 or farewell_token_count > transcript_token_count:
-            continue
-        for start_index in range(transcript_token_count - farewell_token_count + 1):
-            if transcript_tokens[start_index:start_index + farewell_token_count] == farewell_tokens:
-                return True
-    return False
-
-
-def handle_query_shift_intent(intent):
-    slots = (intent or {}).get('slots') or {}
-    date_slot = slots.get('target_date') or {}
-    slot_value = (date_slot.get('value') or '').strip()
-    resolved_target, error_message = resolve_simple_alexa_date(slot_value)
-    if error_message:
-        return _conversational_response(error_message)
-
-    target_summary = get_shift_summary_for_target(resolved_target)
-    if target_summary['kind'] == 'weekend':
-        speech_date = format_weekend_for_speech(target_summary['dates'])
-        people = target_summary['people']
-        notes = target_summary['notes']
-        if not people:
-            speech = f'Para {speech_date} no tengo ninguna persona asignada.'
-        elif len(people) == 1:
-            speech = f'Para {speech_date} le toca a {_join_people_for_speech(people)}.'
-        else:
-            speech = f'Para {speech_date} les toca a {_join_people_for_speech(people)}.'
-        if notes:
-            speech += f" Hay estas notas: {_format_enumerated_notes_for_speech(notes)}"
-        return _conversational_response(speech)
-
-    summary = target_summary['summary']
-    speech_date = format_date_for_speech(summary['date'])
-    person = summary['person']
-    note = summary.get('note')
-    if not person:
-        speech = f'El {speech_date} no tengo ninguna persona asignada.'
-        if note:
-            speech += f' Pero hay una nota: {note}'
-        return _conversational_response(speech)
-
-    speech = f'El {speech_date} le toca a {person}.'
-    if note:
-        speech += f' Hay una nota: {note}'
-    return _conversational_response(speech)
-
-
-def handle_query_notes_intent(intent):
-    slots = (intent or {}).get('slots') or {}
-    date_slot = slots.get('target_date') or {}
-    slot_value = (date_slot.get('value') or '').strip()
-    resolved_target, error_message = resolve_simple_alexa_date(slot_value)
-    if error_message:
-        return _conversational_response(error_message)
-
-    target_summary = get_shift_summary_for_target(resolved_target)
-    if target_summary['kind'] == 'weekend':
-        speech_date = format_weekend_for_speech(target_summary['dates'])
-        notes = target_summary['notes']
-        people = target_summary['people']
-        people_clause = ''
-        if people:
-            if len(people) == 1:
-                people_clause = f' Le toca a {_join_people_for_speech(people)}.'
-            else:
-                people_clause = f' Les toca a {_join_people_for_speech(people)}.'
-        if not notes:
-            return _conversational_response(
-                f'Para {speech_date} no hay ninguna nota apuntada.{people_clause}'
-            )
-        return _conversational_response(
-            f'Para {speech_date} tengo estas notas: '
-            f'{_format_enumerated_notes_for_speech(notes)}.{people_clause}'
-        )
-
-    summary = target_summary['summary']
-    speech_date = format_date_for_speech(summary['date'])
-    note = (summary.get('note') or '').strip()
-    if not note:
-        return _conversational_response(f'El {speech_date} no hay ninguna nota apuntada.')
-
-    return _conversational_response(f'Para el {speech_date} tengo esta nota: {note}')
-
-
-def handle_alexa_request(payload):
-    request_envelope = (payload or {}).get('request') or {}
-    request_type = request_envelope.get('type')
-
-    if request_type == 'LaunchRequest':
-        return alexa_plain_text_response(
-            'Hola. Puedo decirte quién tiene turno en cualquier día.',
-            should_end_session=False,
-            reprompt_text='¿Quieres saber quién tiene turno hoy? Dime una fecha.'
-        )
-
-    if request_type == 'IntentRequest':
-        intent = request_envelope.get('intent') or {}
-        intent_name = intent.get('name')
-
-        if intent_name == 'QueryShiftIntent':
-            return handle_query_shift_intent(intent)
-        if intent_name == 'QueryNotesIntent':
-            return handle_query_notes_intent(intent)
-        if intent_name == 'AMAZON.HelpIntent':
-            return _conversational_response(
-                'Puedes preguntarme quién va con los padres en cualquier fecha '
-                'o qué notas hay apuntadas. '
-                'Por ejemplo: ¿quién viene hoy? o ¿qué notas hay mañana?'
-            )
-        if intent_name in {'AMAZON.StopIntent', 'AMAZON.CancelIntent'}:
-            return alexa_plain_text_response('Hasta luego.')
-        if intent_name == 'AMAZON.FallbackIntent':
-            if _should_end_session_for_fallback(payload):
-                return alexa_plain_text_response('Hasta luego.')
-            return _conversational_response(
-                'No te he entendido. Prueba preguntando quién va con los padres hoy '
-                'o qué notas hay mañana.'
-            )
-
-    return alexa_plain_text_response('No he podido procesar esa petición.')
-
-
-def render_calendar(year, month):
-    # Validar mes y año
-    if month < 1 or month > 12:
-        today = date.today()
-        month = today.month
-        year = today.year
-
-    today = date.today()
-    prev_year, prev_month = get_previous_month(year, month)
-    next_year, next_month = get_next_month(year, month)
-    
-    # Obtener días del mes
-    days = get_month_days_full(year, month)
-    visible_holidays = get_holidays_for_dates(day['date'] for day in days)
-    absences_by_date = get_absences_for_dates(day['date'] for day in days)
-    app.logger.info(
-        'Render calendario %s-%02d con %s festivos detectados en dias visibles',
-        year,
-        month,
-        len(visible_holidays)
-    )
-    
-    # Obtener turnos para cada día
-    for day in days:
-        absent_people = absences_by_date.get(day['date'].isoformat(), [])
-        default_person = get_default_shift_for_day(day['date'])
-        if is_person_absent_on_date(default_person, day['date'], absent_people):
-            default_person = None
-        person, is_custom, note, custom_person = get_shift_for_day(day['date'], absent_people)
-        holiday_info = visible_holidays.get(day['date'].isoformat())
-        day['person'] = person
-        day['default_person'] = default_person
-        day['custom_person'] = custom_person
-        day['is_custom'] = is_custom
-        day['note'] = note
-        day['absent_people'] = absent_people
-        day['is_today'] = day['date'] == today
-        day['holiday_name'] = ' · '.join(holiday_info['names']) if holiday_info else None
-        day['is_holiday'] = bool(holiday_info)
-    
-    # Agrupar en semanas
-    weeks = [days[index:index + 7] for index in range(0, len(days), 7)]
-    
-    # Información del mes
-    month_name = MONTH_NAMES_ES[month]
-    month_options = [
-        {'value': month_number, 'label': MONTH_NAMES_ES[month_number]}
-        for month_number in range(1, 13)
-    ]
-    current_year = today.year
-    year_options = sorted({current_year - 1, current_year, current_year + 1, year})
-
-    context = {
-        'year': year,
-        'month': month,
-        'month_name': month_name,
-        'month_options': month_options,
-        'year_options': year_options,
-        'holiday_reference_year': current_year,
-        'weeks': weeks,
-        'days_of_week': ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'],
-        'prev_url': url_for('calendar_view', year=prev_year, month=prev_month),
-        'next_url': url_for('calendar_view', year=next_year, month=next_month),
-        'people': sorted(PEOPLE),
-    }
-    
-    return render_template('calendar.html', **context)
+app_state = NewHttpCache()
+absence_service = NewAbsenceService(people=PEOPLE, cache_state=app_state)
+holidays = NewHolidayProvider(logger=app.logger, cache_state=app_state)
+shift_service = NewShiftService(
+    people=PEOPLE,
+    absence_service=absence_service,
+    cache_state=app_state,
+)
+calendar_service = NewCalendarService(
+    people=PEOPLE,
+    logger=app.logger,
+    absence_service=absence_service,
+    holiday_provider=holidays,
+    shift_service=shift_service,
+)
+alexa_handler = NewAlexaHandler(skill_id=ALEXA_SKILL_ID, shift_service=shift_service)
 
 
 @app.route(f'/{SECRET_PATH}/')
 @app_state.cached_view(lambda: current_month_cache_key(), ('data', 'holidays'), include_current_day=True)
 def index():
     today = date.today()
-    return render_calendar(today.year, today.month)
+    context = calendar_service.build_context(
+        today.year,
+        today.month,
+        calendar_url_builder=lambda year, month: url_for('calendar_view', year=year, month=month),
+    )
+    return render_template('calendar.html', **context)
 
 
 @app.route(f'/{SECRET_PATH}/calendar/<int:year>/<int:month>')
 @app_state.cached_view(calendar_cache_key, ('data', 'holidays'), include_current_day=True)
 def calendar_view(year, month):
-    return render_calendar(year, month)
+    context = calendar_service.build_context(
+        year,
+        month,
+        calendar_url_builder=lambda target_year, target_month: url_for(
+            'calendar_view',
+            year=target_year,
+            month=target_month,
+        ),
+    )
+    return render_template('calendar.html', **context)
 
 
 @app.route(f'/{SECRET_PATH}/manifest.webmanifest')
@@ -1110,79 +126,17 @@ def web_app_manifest():
 @app.route(f'/{SECRET_PATH}/api/rules', methods=['GET', 'POST'])
 def manage_rules():
     if request.method == 'GET':
-        rules = DayWeekRule.query.order_by(DayWeekRule.day_of_week).all()
+        rules = shift_service.list_rules()
         return jsonify([serialize_rule(rule) for rule in rules])
 
-    data = request.get_json() or {}
-    day_of_week = data.get('day_of_week')
-    algorithm = data.get('algorithm')
-
-    rule = DayWeekRule.query.filter_by(day_of_week=day_of_week).first()
-    if not rule:
-        rule = DayWeekRule()
-        rule.day_of_week = day_of_week
-
-    rule.algorithm = algorithm
-
-    if algorithm == 'fijo':
-        rule.person_fijo = data.get('person_fijo')
-        rule.rotation_order = None
-        rule.rotation_start_date = None
-    elif algorithm == 'rotatorio':
-        rule.person_fijo = None
-        rule.rotation_order = data.get('rotation_order')
-        start_date_str = data.get('rotation_start_date')
-        rule.rotation_start_date = (
-            datetime.fromisoformat(start_date_str).date() if start_date_str else None
-        )
-
-    db.session.add(rule)
-    db.session.commit()
-    app_state.touch_data()
-
-    return jsonify({'success': True, 'id': rule.id})
+    payload, status = shift_service.save_rule(request.get_json() or {})
+    return jsonify(payload), status
 
 
 @app.route(f'/{SECRET_PATH}/api/custom-shift', methods=['POST'])
 def set_custom_shift():
-    data = request.get_json() or {}
-    shift_date_str = data.get('shift_date')
-    raw_person = (data.get('person') or '').strip()
-    person = raw_person or None
-    note = (data.get('note') or '').strip() or None
-
-    if not shift_date_str:
-        return jsonify({'success': False, 'error': 'Invalid data'}), 400
-
-    shift_date = datetime.fromisoformat(shift_date_str).date()
-    should_delete = raw_person == 'clear'
-    if should_delete:
-        person = None
-
-    if person and person not in PEOPLE:
-        return jsonify({'success': False, 'error': 'Persona no válida'}), 400
-    if person and is_person_absent_on_date(person, shift_date):
-        return jsonify({'success': False, 'error': 'La persona está ausente en esa fecha'}), 400
-
-    custom = CustomShift.query.filter_by(shift_date=shift_date).first()
-
-    should_delete = should_delete or (not person and not note)
-    if should_delete:
-        if custom:
-            db.session.delete(custom)
-            db.session.commit()
-            app_state.touch_data()
-    else:
-        if not custom:
-            custom = CustomShift()
-            custom.shift_date = shift_date
-        custom.person = person
-        custom.note = note
-        db.session.add(custom)
-        db.session.commit()
-        app_state.touch_data()
-    
-    return jsonify({'success': True})
+    payload, status = shift_service.set_custom_shift(request.get_json() or {})
+    return jsonify(payload), status
 
 
 def ensure_custom_shift_schema():
@@ -1287,64 +241,20 @@ def ensure_absence_schema():
 @app.route(f'/{SECRET_PATH}/api/absences', methods=['GET', 'POST', 'DELETE'])
 def manage_absences():
     if request.method == 'GET':
-        absences = Absence.query.order_by(Absence.start_date.desc(), Absence.person).all()
+        absences = absence_service.list_absences()
         return jsonify([serialize_absence(absence) for absence in absences])
 
     data = request.get_json() or {}
 
     if request.method == 'DELETE':
-        person = data.get('person')
-        start_date_str = data.get('start_date')
-        if not person or not start_date_str:
-            return jsonify({'success': False, 'error': 'Datos no válidos'}), 400
+        payload, status = absence_service.delete_absence(
+            person=data.get('person') if isinstance(data.get('person'), str) else None,
+            start_date_str=data.get('start_date') if isinstance(data.get('start_date'), str) else None,
+        )
+        return jsonify(payload), status
 
-        start_date = datetime.fromisoformat(start_date_str).date()
-        absence = Absence.query.filter_by(person=person, start_date=start_date).first()
-        if not absence:
-            return jsonify({'success': False, 'error': 'Ausencia no encontrada'}), 404
-
-        db.session.delete(absence)
-        db.session.commit()
-        app_state.touch_data()
-        return jsonify({'success': True})
-
-    start_date_str = data.get('start_date')
-    end_date_str = data.get('end_date')
-    person = data.get('person')
-    original_person = data.get('original_person')
-    original_start_date_str = data.get('original_start_date')
-
-    if not start_date_str or not end_date_str or person not in PEOPLE:
-        return jsonify({'success': False, 'error': 'Datos no válidos'}), 400
-
-    start_date = datetime.fromisoformat(start_date_str).date()
-    end_date = datetime.fromisoformat(end_date_str).date()
-    if end_date < start_date:
-        return jsonify({'success': False, 'error': 'La fecha final no puede ser anterior a la inicial'}), 400
-
-    original_start_date = (
-        datetime.fromisoformat(original_start_date_str).date()
-        if original_start_date_str else None
-    )
-
-    if original_person and original_start_date:
-        original_absence = Absence.query.filter_by(
-            person=original_person,
-            start_date=original_start_date,
-        ).first()
-        if original_absence and (original_person != person or original_start_date != start_date):
-            db.session.delete(original_absence)
-            db.session.flush()
-
-    absence = Absence.query.filter_by(person=person, start_date=start_date).first()
-    if not absence:
-        absence = Absence(person=person, start_date=start_date)
-
-    absence.end_date = end_date
-    db.session.add(absence)
-    db.session.commit()
-    app_state.touch_data()
-    return jsonify({'success': True})
+    payload, status = absence_service.save_absence(data)
+    return jsonify(payload), status
 
 
 @app.route(f'/{SECRET_PATH}/settings')
@@ -1352,7 +262,7 @@ def manage_absences():
 def settings():
     """Página para configurar las reglas"""
     days_of_week = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
-    rules = DayWeekRule.query.all()
+    rules = shift_service.list_rules()
 
     rules_dict = {rule.day_of_week: serialize_rule(rule) for rule in rules}
     
@@ -1368,7 +278,7 @@ def settings():
 @app.route(f'/{SECRET_PATH}/absences')
 @app_state.cached_view(lambda: absences_cache_key(), ('data',))
 def absences():
-    absences_list = Absence.query.order_by(Absence.start_date.desc(), Absence.person).all()
+    absences_list = absence_service.list_absences()
     context = {
         'people': sorted(PEOPLE),
         'absences': [serialize_absence(absence) for absence in absences_list],
@@ -1384,7 +294,7 @@ def secret_static(filename):
 @app.route(f'/{SECRET_PATH}/alexa', methods=['POST'])
 def alexa_webhook():
     payload = request.get_json(silent=True) or {}
-    if not verify_alexa_skill_id(payload):
+    if not alexa_handler.verify_skill_id(payload):
         app.logger.warning('Peticion Alexa rechazada por applicationId no valido')
         return jsonify({'message': 'Forbidden'}), 403
 
@@ -1393,7 +303,7 @@ def alexa_webhook():
         ((payload.get('request') or {}).get('intent') or {}).get('name') or ''
     ).strip()
     app.logger.info('Alexa request type=%s intent=%s', request_type or '-', intent_name or '-')
-    return jsonify(handle_alexa_request(payload))
+    return jsonify(alexa_handler.handle_request(payload))
 
 
 @app.before_request
@@ -1401,7 +311,7 @@ def create_tables():
     db.create_all()
     ensure_custom_shift_schema()
     ensure_absence_schema()
-    ensure_holiday_refresh_worker()
+    holidays.ensure_refresh_worker()
 
 
 if __name__ == '__main__':
@@ -1418,5 +328,5 @@ if __name__ == '__main__':
         db.create_all()
         ensure_custom_shift_schema()
         ensure_absence_schema()
-    ensure_holiday_refresh_worker()
+    holidays.ensure_refresh_worker()
     app.run(host=host, port=port, debug=debug)

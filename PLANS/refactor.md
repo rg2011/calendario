@@ -147,6 +147,18 @@ Siempre que sea razonable:
 - `request`, `jsonify`, `render_template`, `url_for` y decoradores de ruta deben quedarse en `web/`
 - la lógica de dominio debe vivir fuera de Flask
 
+### 7. Documentación ligera en `__init__.py`
+
+Los `__init__.py` creados durante el refactor deben ayudar a entender la API pública del módulo sin introducir redundancia innecesaria.
+
+Reglas:
+
+- mantener type hints completos en la API pública exportada
+- documentar el contrato público con comentarios normales breves cuando aporte contexto
+- evitar wrappers solo para añadir docstrings a símbolos ya documentados en la implementación
+- usar docstrings en `Protocol`, constructores públicos y funciones exportadas solo cuando añadan información real, no para repetir lo obvio
+- preferir reexportación directa si el símbolo ya está bien nombrado y su detalle puede consultarse por LSP o en la implementación
+
 ## Qué Módulos Sí Deben Usar `Protocol`
 
 ### `src/httpcache/`
