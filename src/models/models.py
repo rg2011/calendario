@@ -34,6 +34,19 @@ class CustomShift(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class CustomShiftEmbedding(db.Model):
+    """Embedding asociado a un turno customizado."""
+    __tablename__ = 'custom_shift_embeddings'
+
+    id = db.Column(db.Integer, db.ForeignKey('custom_shifts.id'), primary_key=True)
+    shift_date = db.Column(db.Date, nullable=False, unique=True)
+    embedding_uri = db.Column('embeddingURI', db.String(255))
+    embedding = db.Column(db.LargeBinary)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Absence(db.Model):
     """Ausencia de una persona en un rango de fechas."""
     __tablename__ = 'absences'

@@ -15,7 +15,7 @@ import re
 import time
 
 from dotenv import load_dotenv
-from models import db, DayWeekRule, CustomShift, Absence
+from src.models import db, DayWeekRule, CustomShift, Absence
 
 load_dotenv()
 
