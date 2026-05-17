@@ -6,6 +6,7 @@ from urllib.request import urlopen
 from functools import wraps
 from hashlib import sha256
 from threading import Lock, Thread
+import unicodedata
 import calendar
 import json
 import logging
@@ -725,11 +726,66 @@ def verify_alexa_skill_id(payload):
 # --- Conversation helpers ---------------------------------------------------
 
 _CONVERSATION_REPROMPT = '¿Quieres consultar otra fecha? Dime el día que quieras saber.'
+_ALEXA_FAREWELL_UTTERANCES = {
+    'adios',
+    'hasta luego',
+    'nos vemos',
+    'salir',
+    'cierra',
+    'gracias',
+    'cancela',
+    'cancelar',
+    'basta',
+    'para ya',
+}
 
 
 def _conversational_response(text):
     """Returns a response that keeps the Alexa session open with a reprompt."""
     return alexa_plain_text_response(text, should_end_session=False, reprompt_text=_CONVERSATION_REPROMPT)
+
+
+def _normalize_alexa_utterance(text):
+    if not text:
+        return ''
+    normalized = unicodedata.normalize('NFD', text.strip().lower())
+    ascii_like = ''.join(char for char in normalized if unicodedata.category(char) != 'Mn')
+    cleaned = ''.join(char if char.isalnum() or char.isspace() else ' ' for char in ascii_like)
+    return ' '.join(cleaned.split())
+
+
+def _extract_alexa_transcript(payload):
+    request_envelope = (payload or {}).get('request') or {}
+    intent = request_envelope.get('intent') or {}
+    candidate_values = [
+        request_envelope.get('transcript'),
+        request_envelope.get('inputTranscript'),
+        request_envelope.get('utterance'),
+        intent.get('transcript'),
+        intent.get('inputTranscript'),
+        intent.get('utterance'),
+    ]
+    for value in candidate_values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ''
+
+
+def _should_end_session_for_fallback(payload):
+    transcript = _normalize_alexa_utterance(_extract_alexa_transcript(payload))
+    if not transcript:
+        return False
+    transcript_tokens = transcript.split()
+    transcript_token_count = len(transcript_tokens)
+    for farewell in _ALEXA_FAREWELL_UTTERANCES:
+        farewell_tokens = farewell.split()
+        farewell_token_count = len(farewell_tokens)
+        if farewell_token_count == 0 or farewell_token_count > transcript_token_count:
+            continue
+        for start_index in range(transcript_token_count - farewell_token_count + 1):
+            if transcript_tokens[start_index:start_index + farewell_token_count] == farewell_tokens:
+                return True
+    return False
 
 
 def handle_query_shift_intent(intent):
@@ -756,6 +812,23 @@ def handle_query_shift_intent(intent):
     return _conversational_response(speech)
 
 
+def handle_query_notes_intent(intent):
+    slots = (intent or {}).get('slots') or {}
+    date_slot = slots.get('target_date') or {}
+    slot_value = (date_slot.get('value') or '').strip()
+    resolved_date, error_message = resolve_simple_alexa_date(slot_value)
+    if error_message:
+        return _conversational_response(error_message)
+
+    summary = get_shift_summary_for_date(resolved_date)
+    speech_date = format_date_for_speech(resolved_date)
+    note = (summary.get('note') or '').strip()
+    if not note:
+        return _conversational_response(f'El {speech_date} no hay ninguna nota apuntada.')
+
+    return _conversational_response(f'Para el {speech_date} tengo esta nota: {note}')
+
+
 def handle_alexa_request(payload):
     request_envelope = (payload or {}).get('request') or {}
     request_type = request_envelope.get('type')
@@ -773,20 +846,22 @@ def handle_alexa_request(payload):
 
         if intent_name == 'QueryShiftIntent':
             return handle_query_shift_intent(intent)
+        if intent_name == 'QueryNotesIntent':
+            return handle_query_notes_intent(intent)
         if intent_name == 'AMAZON.HelpIntent':
             return _conversational_response(
-                'Puedes preguntarme quién va con los padres en cualquier fecha. '
-                'Por ejemplo: ¿quién viene hoy?'
+                'Puedes preguntarme quién va con los padres en cualquier fecha '
+                'o qué notas hay apuntadas. '
+                'Por ejemplo: ¿quién viene hoy? o ¿qué notas hay mañana?'
             )
         if intent_name in {'AMAZON.StopIntent', 'AMAZON.CancelIntent'}:
             return alexa_plain_text_response('Hasta luego.')
         if intent_name == 'AMAZON.FallbackIntent':
+            if _should_end_session_for_fallback(payload):
+                return alexa_plain_text_response('Hasta luego.')
             return _conversational_response(
-                'No te he entendido. Prueba preguntando quién va con los padres hoy.'
-            )
-        if intent_name == 'QueryNotesIntent':
-            return _conversational_response(
-                'La consulta de notas todavía no está disponible en esta primera versión.'
+                'No te he entendido. Prueba preguntando quién va con los padres hoy '
+                'o qué notas hay mañana.'
             )
 
     return alexa_plain_text_response('No he podido procesar esa petición.')
