@@ -4,7 +4,17 @@ import os
 from datetime import date
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request, send_from_directory, url_for
+from flask import (
+    Flask,
+    abort,
+    g,
+    has_request_context,
+    jsonify,
+    render_template,
+    request,
+    send_from_directory,
+    url_for,
+)
 
 from src.absences import New as NewAbsenceService
 from src.absences import serialize_absence
@@ -27,11 +37,27 @@ from src.shifts import serialize_rule
 
 load_dotenv()
 
-SECRET_PATH = os.environ.get("CALENDARIO_SECRET_PATH", "").strip().strip("/")
-if not SECRET_PATH:
-    raise RuntimeError("Debes definir CALENDARIO_SECRET_PATH en el entorno o en .env")
-if "/" in SECRET_PATH:
-    raise RuntimeError('CALENDARIO_SECRET_PATH debe ser un único segmento de ruta, sin "/"')
+READ_WRITE = "read_write"
+READ_ONLY = "read_only"
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+def read_secret_path(env_name: str) -> str:
+    """Lee y valida un secreto de ruta desde una variable de entorno."""
+    secret_path = os.environ.get(env_name, "").strip().strip("/")
+    if not secret_path:
+        raise RuntimeError(f"Debes definir {env_name} en el entorno o en .env")
+    if "/" in secret_path:
+        raise RuntimeError(f'{env_name} debe ser un único segmento de ruta, sin "/"')
+    return secret_path
+
+
+SECRET_PATH = read_secret_path("CALENDARIO_SECRET_PATH")
+READONLY_SECRET_PATH = read_secret_path("CALENDARIO_READONLY_SECRET_PATH")
+if READONLY_SECRET_PATH == SECRET_PATH:
+    raise RuntimeError(
+        "CALENDARIO_READONLY_SECRET_PATH debe ser distinto de CALENDARIO_SECRET_PATH"
+    )
 
 app = Flask(__name__, static_folder=None)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///calendar.db"
@@ -61,23 +87,94 @@ calendar_service = NewCalendarService(
 alexa_handler = NewAlexaHandler(skill_id=ALEXA_SKILL_ID, shift_service=shift_service)
 
 
-@app.route(f"/{SECRET_PATH}/")
+def current_secret_path() -> str:
+    """Devuelve el secreto de la petición actual, usando read-only como fallback seguro."""
+    if has_request_context():
+        return getattr(g, "secret_path", READONLY_SECRET_PATH)
+    return READONLY_SECRET_PATH
+
+
+def current_access_mode() -> str:
+    """Devuelve el modo de acceso actual, usando read-only como fallback seguro."""
+    if has_request_context():
+        return getattr(g, "access_mode", READ_ONLY)
+    return READ_ONLY
+
+
+def access_cache_key(resource_key: str) -> str:
+    """Separa las claves de caché por modo de acceso."""
+    return f"{current_access_mode()}:{resource_key}"
+
+
+def endpoint_accepts_secret(endpoint: str) -> bool:
+    """Indica si un endpoint registrado acepta el parámetro dinámico `secret`."""
+    try:
+        return any("secret" in rule.arguments for rule in app.url_map.iter_rules(endpoint))
+    except KeyError:
+        return False
+
+
+def path_after_secret() -> str:
+    """Devuelve la parte de la ruta posterior al primer segmento secreto."""
+    path_parts = request.path.lstrip("/").split("/", 1)
+    if len(path_parts) != 2:
+        return ""
+    return path_parts[1]
+
+
+@app.before_request
+def resolve_secret_access():
+    """Resuelve el modo de acceso de la petición y bloquea escrituras read-only."""
+    secret = request.path.lstrip("/").split("/", 1)[0]
+    if secret == SECRET_PATH:
+        g.secret_path = SECRET_PATH
+        g.access_mode = READ_WRITE
+    elif secret == READONLY_SECRET_PATH:
+        g.secret_path = READONLY_SECRET_PATH
+        g.access_mode = READ_ONLY
+    else:
+        abort(404)
+
+    if g.access_mode == READ_ONLY and request.endpoint == "alexa_webhook":
+        abort(404)
+
+    if g.access_mode == READ_ONLY and request.method in WRITE_METHODS:
+        if path_after_secret().startswith("api/"):
+            return jsonify({"success": False, "error": "Ruta de solo lectura"}), 403
+        abort(403)
+
+
+@app.url_defaults
+def add_secret_to_urls(endpoint: str, values: dict[str, object]) -> None:
+    """Propaga el secreto actual al construir URLs internas con `url_for`."""
+    if "secret" not in values and endpoint_accepts_secret(endpoint):
+        values["secret"] = current_secret_path()
+
+
+@app.route("/<secret>/")
 @app_state.cached_view(
-    lambda: current_month_cache_key(), ("data", "holidays"), include_current_day=True
+    lambda secret: access_cache_key(current_month_cache_key()),
+    ("data", "holidays"),
+    include_current_day=True,
 )
-def index():
+def index(_):
     today = date.today()
     context = calendar_service.build_context(
         today.year,
         today.month,
         calendar_url_builder=lambda year, month: url_for("calendar_view", year=year, month=month),
+        include_notes=current_access_mode() != READ_ONLY,
     )
     return render_template("calendar.html", **context)
 
 
-@app.route(f"/{SECRET_PATH}/calendar/<int:year>/<int:month>")
-@app_state.cached_view(calendar_cache_key, ("data", "holidays"), include_current_day=True)
-def calendar_view(year, month):
+@app.route("/<secret>/calendar/<int:year>/<int:month>")
+@app_state.cached_view(
+    lambda secret, year, month: access_cache_key(calendar_cache_key(year, month)),
+    ("data", "holidays"),
+    include_current_day=True,
+)
+def calendar_view(secret, year, month):
     context = calendar_service.build_context(
         year,
         month,
@@ -86,12 +183,13 @@ def calendar_view(year, month):
             year=target_year,
             month=target_month,
         ),
+        include_notes=current_access_mode() != READ_ONLY,
     )
     return render_template("calendar.html", **context)
 
 
-@app.route(f"/{SECRET_PATH}/manifest.webmanifest")
-def web_app_manifest():
+@app.route("/<secret>/manifest.webmanifest")
+def web_app_manifest(_):
     manifest = {
         "id": url_for("index"),
         "name": "Calendario de Turnos",
@@ -132,8 +230,8 @@ def web_app_manifest():
     )
 
 
-@app.route(f"/{SECRET_PATH}/api/rules", methods=["GET", "POST"])
-def manage_rules():
+@app.route("/<secret>/api/rules", methods=["GET", "POST"])
+def manage_rules(_):
     if request.method == "GET":
         rules = shift_service.list_rules()
         return jsonify([serialize_rule(rule) for rule in rules])
@@ -142,14 +240,14 @@ def manage_rules():
     return jsonify(payload), status
 
 
-@app.route(f"/{SECRET_PATH}/api/custom-shift", methods=["POST"])
-def set_custom_shift():
+@app.route("/<secret>/api/custom-shift", methods=["POST"])
+def set_custom_shift(_):
     payload, status = shift_service.set_custom_shift(request.get_json() or {})
     return jsonify(payload), status
 
 
-@app.route(f"/{SECRET_PATH}/api/absences", methods=["GET", "POST", "DELETE"])
-def manage_absences():
+@app.route("/<secret>/api/absences", methods=["GET", "POST", "DELETE"])
+def manage_absences(_):
     if request.method == "GET":
         absences = absence_service.list_absences()
         return jsonify([serialize_absence(absence) for absence in absences])
@@ -169,9 +267,9 @@ def manage_absences():
     return jsonify(payload), status
 
 
-@app.route(f"/{SECRET_PATH}/settings")
-@app_state.cached_view(lambda: settings_cache_key(), ("data",))
-def settings():
+@app.route("/<secret>/settings")
+@app_state.cached_view(lambda secret: access_cache_key(settings_cache_key()), ("data",))
+def settings(_):
     """Página para configurar las reglas"""
     days_of_week = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     rules = shift_service.list_rules()
@@ -187,9 +285,9 @@ def settings():
     return render_template("settings.html", **context)
 
 
-@app.route(f"/{SECRET_PATH}/absences")
-@app_state.cached_view(lambda: absences_cache_key(), ("data",))
-def absences():
+@app.route("/<secret>/absences")
+@app_state.cached_view(lambda secret: access_cache_key(absences_cache_key()), ("data",))
+def absences(_):
     absences_list = absence_service.list_absences()
     context = {
         "people": sorted(PEOPLE),
@@ -198,13 +296,13 @@ def absences():
     return render_template("absences.html", **context)
 
 
-@app.route(f"/{SECRET_PATH}/static/<path:filename>")
-def secret_static(filename):
+@app.route("/<secret>/static/<path:filename>")
+def secret_static(secret, filename):
     return send_from_directory(os.path.join(app.root_path, "static"), filename)
 
 
-@app.route(f"/{SECRET_PATH}/alexa", methods=["POST"])
-def alexa_webhook():
+@app.route("/<secret>/alexa", methods=["POST"])
+def alexa_webhook(_):
     payload = request.get_json(silent=True) or {}
     if not alexa_handler.verify_skill_id(payload):
         app.logger.warning("Peticion Alexa rechazada por applicationId no valido")
@@ -226,7 +324,11 @@ if __name__ == "__main__":
     host = os.environ.get("FLASK_RUN_HOST", "127.0.0.1")
     port = int(os.environ.get("FLASK_RUN_PORT", "5000"))
     debug = os.environ.get("FLASK_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
-    app.logger.info("Rutas publicadas bajo el prefijo secreto /%s", SECRET_PATH)
+    app.logger.info(
+        "Rutas publicadas bajo /%s y /%s en modo solo lectura",
+        SECRET_PATH,
+        READONLY_SECRET_PATH,
+    )
     app.logger.info("Escuchando en http://%s:%s/%s", host, port, SECRET_PATH)
     with app.app_context():
         initialize_runtime(app, holidays, app_state)

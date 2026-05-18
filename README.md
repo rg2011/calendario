@@ -74,22 +74,33 @@ La app no expone rutas públicas normales. Todas las rutas cuelgan de un prefijo
 /<secreto>/...
 ```
 
+Hay dos prefijos configurables:
+
+- `CALENDARIO_SECRET_PATH`: lectura y escritura
+- `CALENDARIO_READONLY_SECRET_PATH`: solo lectura
+
 Ejemplos:
 
 ```text
 /mi-ruta-secreta/
 /mi-ruta-secreta/calendar/2026/4
 /mi-ruta-secreta/settings
+/mi-ruta-solo-lectura/
 ```
 
 Cualquier otra ruta devuelve `404`.
 
-El secreto se lee de:
+La ruta de solo lectura permite navegar por el calendario, reglas y ausencias, pero bloquea
+métodos de escritura (`POST`, `PUT`, `PATCH` y `DELETE`). En el calendario, además, no se
+serializa el contenido de las notas. El endpoint de Alexa solo está disponible bajo la ruta de
+lectura y escritura.
 
-- variable de entorno `CALENDARIO_SECRET_PATH`
+Los secretos se leen de:
+
+- variables de entorno `CALENDARIO_SECRET_PATH` y `CALENDARIO_READONLY_SECRET_PATH`
 - o un fichero `.env`
 
-Debe ser un único segmento de ruta, sin `/`.
+Deben ser segmentos únicos de ruta, sin `/`, y deben ser distintos entre sí.
 
 ## Requisitos
 
@@ -121,7 +132,8 @@ uv add <paquete>
 Crea un fichero `.env` en la raíz del proyecto:
 
 ```env
-CALENDARIO_SECRET_PATH=mi-ruta-secreta-123
+CALENDARIO_SECRET_PATH=mi-ruta-escritura-123
+CALENDARIO_READONLY_SECRET_PATH=mi-ruta-lectura-123
 FLASK_RUN_HOST=127.0.0.1
 FLASK_RUN_PORT=5000
 ```
@@ -130,7 +142,11 @@ Variables relevantes:
 
 - `CALENDARIO_SECRET_PATH`
   - obligatoria
-  - define el prefijo secreto de la URL
+  - define el prefijo secreto con lectura y escritura
+- `CALENDARIO_READONLY_SECRET_PATH`
+  - obligatoria
+  - define el prefijo secreto de solo lectura
+  - no puede coincidir con `CALENDARIO_SECRET_PATH`
 - `FLASK_RUN_HOST`
   - opcional
   - por defecto `127.0.0.1`
@@ -147,7 +163,7 @@ uv run python app.py
 Al arrancar, la app muestra en consola una línea similar a:
 
 ```text
-Escuchando en http://127.0.0.1:5000/mi-ruta-secreta-123
+Escuchando en http://127.0.0.1:5000/mi-ruta-escritura-123
 ```
 
 ## Uso

@@ -86,6 +86,7 @@ class CalendarService:
         year: int,
         month: int,
         calendar_url_builder: Callable[[int, int], str],
+        include_notes: bool = True,
     ) -> dict[str, Any]:
         """Construye el contexto completo de render del calendario mensual."""
         if month < 1 or month > 12:
@@ -125,7 +126,7 @@ class CalendarService:
             day["default_person"] = default_person
             day["custom_person"] = custom_person
             day["is_custom"] = is_custom
-            day["note"] = note
+            day["note"] = note if include_notes else None
             day["absent_people"] = absent_people
             day["is_today"] = day["date"] == today
             day["holiday_name"] = " · ".join(holiday_info["names"]) if holiday_info else None
