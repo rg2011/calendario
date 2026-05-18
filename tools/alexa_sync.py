@@ -12,7 +12,6 @@ from urllib import error, parse, request
 
 from dotenv import load_dotenv
 
-
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = ROOT_DIR / "alexa" / "config.json"
 LWA_TOKEN_URL = "https://api.amazon.com/auth/o2/token"
@@ -217,9 +216,7 @@ def perform_request(req: request.Request) -> Any:
             return json.loads(raw)
     except error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise AlexaConfigError(
-            f"HTTP {exc.code} al llamar a {req.full_url}\n{body}"
-        ) from exc
+        raise AlexaConfigError(f"HTTP {exc.code} al llamar a {req.full_url}\n{body}") from exc
     except error.URLError as exc:
         raise AlexaConfigError(f"Error de red al llamar a {req.full_url}: {exc}") from exc
 
@@ -230,7 +227,11 @@ def load_repo_config(path: Path) -> dict[str, Any]:
 
 def render_manifest(payload: dict[str, Any], env: AlexaEnv) -> dict[str, Any]:
     manifest = json.loads(json.dumps(payload))
-    locales = manifest.setdefault("manifest", {}).setdefault("publishingInformation", {}).setdefault("locales", {})
+    locales = (
+        manifest.setdefault("manifest", {})
+        .setdefault("publishingInformation", {})
+        .setdefault("locales", {})
+    )
     locale_config = locales.setdefault("es-ES", {})
     locale_config["name"] = env.invocation_name
 
@@ -340,8 +341,8 @@ def cmd_status(_: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_list_skills(_: argparse.Namespace) -> int:
-    _, smapi = create_clients()
+def cmd_list_skills(_args: object) -> int:
+    _env, smapi = create_clients()
     print(json.dumps(smapi.list_skills_for_vendor(), ensure_ascii=True, indent=2))
     return 0
 
@@ -385,7 +386,7 @@ def cmd_build_status(args: argparse.Namespace) -> int:
     env, smapi = create_clients()
     skill_id = require_skill_id(env)
     status = smapi.get_skill_status(skill_id, env.skill_stage)
-    interaction_model_status = (((status or {}).get("interactionModel") or {}).get(args.locale) or {})
+    interaction_model_status = ((status or {}).get("interactionModel") or {}).get(args.locale) or {}
     print(json.dumps(interaction_model_status, ensure_ascii=True, indent=2))
     return 0
 
@@ -428,6 +429,7 @@ def cmd_simulate(args: argparse.Namespace) -> int:
         if result.get("status") in {"SUCCESSFUL", "FAILED"}:
             break
         import time
+
         time.sleep(args.poll_interval)
         result = smapi.get_simulation(skill_id, env.skill_stage, simulation_id)
 
@@ -444,11 +446,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("auth-test", help="Valida LWA con refresh token").set_defaults(func=cmd_auth_test)
-    subparsers.add_parser("auth-doctor", help="Diagnostica credenciales LWA").set_defaults(func=cmd_auth_doctor)
-    subparsers.add_parser("status", help="Muestra estado basico del skill").set_defaults(func=cmd_status)
-    subparsers.add_parser("list-skills", help="Lista skills del vendor").set_defaults(func=cmd_list_skills)
-    subparsers.add_parser("push-manifest", help="Sube el manifest del skill").set_defaults(func=cmd_push_manifest)
+    subparsers.add_parser("auth-test", help="Valida LWA con refresh token").set_defaults(
+        func=cmd_auth_test
+    )
+    subparsers.add_parser("auth-doctor", help="Diagnostica credenciales LWA").set_defaults(
+        func=cmd_auth_doctor
+    )
+    subparsers.add_parser("status", help="Muestra estado basico del skill").set_defaults(
+        func=cmd_status
+    )
+    subparsers.add_parser("list-skills", help="Lista skills del vendor").set_defaults(
+        func=cmd_list_skills
+    )
+    subparsers.add_parser("push-manifest", help="Sube el manifest del skill").set_defaults(
+        func=cmd_push_manifest
+    )
 
     push_model = subparsers.add_parser("push-model", help="Sube el interaction model de un locale")
     push_model.add_argument("--locale", default="es-ES")
@@ -458,7 +470,9 @@ def build_parser() -> argparse.ArgumentParser:
     build_model.add_argument("--locale", default="es-ES")
     build_model.set_defaults(func=cmd_build_model)
 
-    build_status = subparsers.add_parser("build-status", help="Consulta estado del build del modelo")
+    build_status = subparsers.add_parser(
+        "build-status", help="Consulta estado del build del modelo"
+    )
     build_status.add_argument("--locale", default="es-ES")
     build_status.set_defaults(func=cmd_build_status)
 
@@ -473,7 +487,9 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--poll-interval", type=float, default=1.0)
     simulate.set_defaults(func=cmd_simulate)
 
-    subparsers.add_parser("render", help="Renderiza artefactos con valores del entorno").set_defaults(func=cmd_render)
+    subparsers.add_parser(
+        "render", help="Renderiza artefactos con valores del entorno"
+    ).set_defaults(func=cmd_render)
     return parser
 
 

@@ -1,12 +1,14 @@
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+
+from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
 
 class DayWeekRule(db.Model):
     """Regla de asignación para cada día de la semana (0=lunes, 6=domingo)"""
-    __tablename__ = 'day_week_rules'
+
+    __tablename__ = "day_week_rules"
 
     id = db.Column(db.Integer, primary_key=True)
     day_of_week = db.Column(db.Integer, nullable=False)  # 0=lunes, 6=domingo
@@ -23,7 +25,8 @@ class DayWeekRule(db.Model):
 
 class CustomShift(db.Model):
     """Turno customizado para un día específico"""
-    __tablename__ = 'custom_shifts'
+
+    __tablename__ = "custom_shifts"
 
     id = db.Column(db.Integer, primary_key=True)
     shift_date = db.Column(db.Date, nullable=False, unique=True)
@@ -34,9 +37,24 @@ class CustomShift(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class CustomShiftEmbedding(db.Model):
+    """Embedding asociado a un turno customizado."""
+
+    __tablename__ = "custom_shift_embeddings"
+
+    id = db.Column(db.Integer, db.ForeignKey("custom_shifts.id"), primary_key=True)
+    shift_date = db.Column(db.Date, nullable=False, unique=True)
+    embedding_uri = db.Column("embeddingURI", db.String(255))
+    embedding = db.Column(db.LargeBinary)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Absence(db.Model):
     """Ausencia de una persona en un rango de fechas."""
-    __tablename__ = 'absences'
+
+    __tablename__ = "absences"
 
     person = db.Column(db.String(50), primary_key=True)
     start_date = db.Column(db.Date, primary_key=True)
