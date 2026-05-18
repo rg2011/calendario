@@ -157,7 +157,7 @@ def add_secret_to_urls(endpoint: str, values: dict[str, object]) -> None:
     ("data", "holidays"),
     include_current_day=True,
 )
-def index(_):
+def index(secret):
     today = date.today()
     context = calendar_service.build_context(
         today.year,
@@ -189,7 +189,7 @@ def calendar_view(secret, year, month):
 
 
 @app.route("/<secret>/manifest.webmanifest")
-def web_app_manifest(_):
+def web_app_manifest(secret):
     manifest = {
         "id": url_for("index"),
         "name": "Calendario de Turnos",
@@ -231,7 +231,7 @@ def web_app_manifest(_):
 
 
 @app.route("/<secret>/api/rules", methods=["GET", "POST"])
-def manage_rules(_):
+def manage_rules(secret):
     if request.method == "GET":
         rules = shift_service.list_rules()
         return jsonify([serialize_rule(rule) for rule in rules])
@@ -241,13 +241,13 @@ def manage_rules(_):
 
 
 @app.route("/<secret>/api/custom-shift", methods=["POST"])
-def set_custom_shift(_):
+def set_custom_shift(secret):
     payload, status = shift_service.set_custom_shift(request.get_json() or {})
     return jsonify(payload), status
 
 
 @app.route("/<secret>/api/absences", methods=["GET", "POST", "DELETE"])
-def manage_absences(_):
+def manage_absences(secret):
     if request.method == "GET":
         absences = absence_service.list_absences()
         return jsonify([serialize_absence(absence) for absence in absences])
@@ -269,7 +269,7 @@ def manage_absences(_):
 
 @app.route("/<secret>/settings")
 @app_state.cached_view(lambda secret: access_cache_key(settings_cache_key()), ("data",))
-def settings(_):
+def settings(secret):
     """Página para configurar las reglas"""
     days_of_week = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     rules = shift_service.list_rules()
@@ -287,7 +287,7 @@ def settings(_):
 
 @app.route("/<secret>/absences")
 @app_state.cached_view(lambda secret: access_cache_key(absences_cache_key()), ("data",))
-def absences(_):
+def absences(secret):
     absences_list = absence_service.list_absences()
     context = {
         "people": sorted(PEOPLE),
@@ -302,7 +302,7 @@ def secret_static(secret, filename):
 
 
 @app.route("/<secret>/alexa", methods=["POST"])
-def alexa_webhook(_):
+def alexa_webhook(secret):
     payload = request.get_json(silent=True) or {}
     if not alexa_handler.verify_skill_id(payload):
         app.logger.warning("Peticion Alexa rechazada por applicationId no valido")
