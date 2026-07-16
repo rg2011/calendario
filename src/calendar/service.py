@@ -1,6 +1,6 @@
 import calendar
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from logging import Logger
 from typing import Any
 
@@ -151,6 +151,48 @@ class CalendarService:
             "days_of_week": DAYS_OF_WEEK_ABBR,
             "prev_url": calendar_url_builder(prev_year, prev_month),
             "next_url": calendar_url_builder(next_year, next_month),
+            "people": self._people,
+        }
+
+
+    def build_week_context(
+        self,
+        start: date,
+        include_notes: bool = True,
+    ) -> dict[str, Any]:
+        """Construye el contexto completo de render del calendario semanal."""
+        days: list[dict[str, Any]] = [{"date": start},]
+        days.extend({"date": start + timedelta(days=d)} for d in range(1,7))
+        absences_by_date = self._absence_service.get_absences_for_dates(day["date"] for day in days)
+        self._logger.info("Render semana %s", start.isoformat())
+
+        for day in days:
+            absent_people = absences_by_date.get(day["date"].isoformat(), [])
+            default_person = self._shift_service.get_default_shift_for_day(day["date"])
+            if self._absence_service.is_person_absent_on_date(
+                default_person, day["date"], absent_people
+            ):
+                default_person = None
+            person, is_custom, note, custom_person = self._shift_service.get_shift_for_day(
+                day["date"],
+                absent_people,
+            )
+            day["label"] = "%s, %d de %s" % (
+                DAYS_OF_WEEK_ABBR[day["date"].weekday()],
+                day["date"].day,
+                MONTH_NAMES_ES[day["date"].month-1],
+            )
+            day["person"] = person
+            day["default_person"] = default_person
+            day["custom_person"] = custom_person
+            day["is_custom"] = is_custom
+            day["note"] = note if include_notes else None
+            day["absent_people"] = absent_people
+            day["is_today"] = day["date"] == start
+
+        return {
+            "start": start,
+            "days": days,
             "people": self._people,
         }
 

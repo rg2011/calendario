@@ -29,6 +29,7 @@
                 <li><a href="{{ url_for('index') }}" class="nav-link {% if request.endpoint in ['index', 'calendar_view'] %}is-active{% endif %}">Calendario</a></li>
                 <li><a href="{{ url_for('settings') }}" class="nav-link {% if request.endpoint == 'settings' %}is-active{% endif %}">Reglas</a></li>
                 <li><a href="{{ url_for('absences') }}" class="nav-link {% if request.endpoint == 'absences' %}is-active{% endif %}">Ausencias</a></li>
+                <li><a href="{{ url_for('week') }}" class="nav-link {% if request.endpoint == 'week' %}is-active{% endif %}">Semana</a></li>
             </ul>
         </div>
     </nav>

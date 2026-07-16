@@ -7,6 +7,7 @@ from .cache import (
     calendar_cache_key,
     current_month_cache_key,
     settings_cache_key,
+    week_cache_key,
 )
 
 
@@ -48,6 +49,7 @@ __all__ = [
     "calendar_cache_key",
     "current_month_cache_key",
     "settings_cache_key",
+    "week_cache_key",
 ]
 
 # API pública reexportada:

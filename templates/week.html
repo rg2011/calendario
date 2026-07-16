@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}Semana{% endblock %}
+
+{% block content %}
+<div class="week-container">
+    <div class="week-layout">
+        {% for day in days %}
+        <article class="week-day"
+            data-person="{{ day.person }}"
+            data-date="{{ day.date }}">
+            <time class="week-day-date" datetime="{{ day.date.isoformat() }}">{{ day.label }}</time>
+            <div class="week-day-person">{{ day.person }}</div>
+        </article>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+</script>
+{% endblock %}

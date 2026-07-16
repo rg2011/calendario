@@ -30,6 +30,7 @@ from src.httpcache import (
     calendar_cache_key,
     current_month_cache_key,
     settings_cache_key,
+    week_cache_key,
 )
 from src.models import db
 from src.shifts import New as NewShiftService
@@ -283,6 +284,16 @@ def settings(secret):
     }
 
     return render_template("settings.html", **context)
+
+
+@app.route("/<secret>/week")
+@app_state.cached_view(lambda secret: access_cache_key(week_cache_key()), ("data",))
+def week(secret):
+    context = calendar_service.build_week_context(
+        date.today(),
+        include_notes=current_access_mode() != READ_ONLY,
+    )
+    return render_template("week.html", **context)
 
 
 @app.route("/<secret>/absences")
