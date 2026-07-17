@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 from datetime import date
 
 from dotenv import load_dotenv
@@ -43,6 +44,7 @@ load_dotenv()
 READ_WRITE = "read_write"
 READ_ONLY = "read_only"
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+APP_BOOT_CACHE_KEY = str(time.time_ns())
 
 
 def read_secret_path(env_name: str) -> str:
@@ -150,9 +152,10 @@ def resolve_secret_access():
 
 @app.url_defaults
 def add_secret_to_urls(endpoint: str, values: dict[str, object]) -> None:
-    """Propaga el secreto actual al construir URLs internas con `url_for`."""
+    """Propaga el secreto y la versión de arranque al construir URLs internas."""
     if "secret" not in values and endpoint_accepts_secret(endpoint):
         values["secret"] = current_secret_path()
+    values.setdefault("v", APP_BOOT_CACHE_KEY)
 
 
 @app.route("/<secret>/")
