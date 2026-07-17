@@ -1344,6 +1344,7 @@ body {
     body {
         background: var(--surface);
         background-color: var(--surface);
+        min-height: 100dvh;
     }
 
     .navbar {
