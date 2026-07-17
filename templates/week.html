@@ -48,34 +48,43 @@ const weekTab = document.getElementById('weekTab');
 const dialingTab = document.getElementById('dialingTab');
 const weekPanel = document.getElementById('weekPanel');
 const dialingPanel = document.getElementById('dialingPanel');
-const tabs = [weekTab, dialingTab];
 const panels = [weekPanel, dialingPanel];
 const swipeSurface = document.querySelector('.container');
 const swipeThreshold = 60;
 const localPhoneContactsKey = 'calendario.phone-contacts.v1';
+const extraPhoneContactsKey = 'calendario.extra-phone-contacts.v1';
 let swipeStartX = null;
 let swipeStartY = null;
 let isTabTransitioning = false;
+let activePanelIndex = 0;
 
-function showWeekTab(showWeek) {
+function showPanel(index) {
+    panels.forEach((panel, panelIndex) => {
+        panel.hidden = panelIndex !== index;
+    });
+    activePanelIndex = index;
+
+    const showWeek = index === 0;
     weekTab.classList.toggle('is-active', showWeek);
     dialingTab.classList.toggle('is-active', !showWeek);
     weekTab.setAttribute('aria-selected', String(showWeek));
     dialingTab.setAttribute('aria-selected', String(!showWeek));
-    weekPanel.hidden = !showWeek;
-    dialingPanel.hidden = showWeek;
+}
+
+function showWeekTab(showWeek) {
+    showPanel(showWeek ? 0 : 1);
 }
 
 function showTab(index, animate = false, direction = 1) {
-    const normalizedIndex = (index + tabs.length) % tabs.length;
-    const currentIndex = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
+    const normalizedIndex = (index + panels.length) % panels.length;
+    const currentIndex = activePanelIndex;
 
     if (normalizedIndex === currentIndex || isTabTransitioning) {
         return;
     }
 
     if (!animate) {
-        showWeekTab(normalizedIndex === 0);
+        showPanel(normalizedIndex);
         return;
     }
 
@@ -95,7 +104,7 @@ function showTab(index, animate = false, direction = 1) {
 
         currentPanel.classList.remove('is-sliding-out-right', 'is-sliding-out-left');
         nextPanel.classList.remove('is-sliding-in-left', 'is-sliding-in-right');
-        showWeekTab(normalizedIndex === 0);
+        showPanel(normalizedIndex);
         isTabTransitioning = false;
     }
 
@@ -119,6 +128,93 @@ function getLocalPhoneContacts() {
     } catch (error) {
         return {};
     }
+}
+
+function getExtraPhoneContacts() {
+    try {
+        const contacts = JSON.parse(localStorage.getItem(extraPhoneContactsKey) || '[]');
+        return Array.isArray(contacts) ? contacts : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function getInitial(name) {
+    const normalizedName = name
+        .trim()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase();
+    const initial = Array.from(normalizedName)[0];
+    return initial && initial >= 'A' && initial <= 'Z' ? initial : '#';
+}
+
+function addVirtualContactPanels() {
+    const contactsByInitial = new Map();
+    getExtraPhoneContacts().forEach((contact) => {
+        if (!contact || typeof contact.name !== 'string' || typeof contact.tel !== 'string' || !contact.name.trim() || !contact.tel) {
+            return;
+        }
+
+        const initial = getInitial(contact.name);
+        const contacts = contactsByInitial.get(initial) || [];
+        contacts.push(contact);
+        contactsByInitial.set(initial, contacts);
+    });
+
+    const initials = [...contactsByInitial.keys()].sort((first, second) => {
+        if (first === '#') return 1;
+        if (second === '#') return -1;
+        return first.localeCompare(second);
+    });
+
+    initials.forEach((initial) => {
+        const panel = document.createElement('section');
+        panel.className = 'week-tab-panel virtual-contacts-panel';
+        panel.hidden = true;
+        panel.setAttribute('role', 'region');
+        panel.setAttribute('aria-label', initial === '#' ? 'Contactos: otros' : `Contactos: ${initial}`);
+
+        const heading = document.createElement('h2');
+        heading.className = 'virtual-contacts-heading';
+        heading.textContent = initial === '#' ? 'Otros contactos' : initial;
+        const contactList = document.createElement('div');
+        contactList.className = 'dialing-list';
+
+        contactsByInitial.get(initial)
+            .sort((first, second) => first.name.localeCompare(second.name, 'es'))
+            .forEach((contact) => {
+                const contactElement = document.createElement('article');
+                contactElement.className = 'dialing-contact';
+                const shortcut = document.createElement('span');
+                shortcut.className = 'dialing-shortcut';
+                shortcut.textContent = initial;
+                const details = document.createElement('div');
+                details.className = 'virtual-contact-details';
+                const name = document.createElement('span');
+                name.className = 'dialing-name';
+                name.textContent = contact.name;
+                const phone = document.createElement('span');
+                phone.className = 'virtual-contact-phone';
+                phone.textContent = contact.tel;
+                details.append(name, phone);
+                const callButton = document.createElement('a');
+                callButton.className = 'dialing-call';
+                callButton.href = `tel:${contact.tel}`;
+                callButton.setAttribute('aria-label', `Llamar a ${contact.name}`);
+                callButton.title = 'Llamar';
+                const callIcon = document.createElement('i');
+                callIcon.className = 'fa-solid fa-phone';
+                callIcon.setAttribute('aria-hidden', 'true');
+                callButton.append(callIcon);
+                contactElement.append(shortcut, details, callButton);
+                contactList.append(contactElement);
+            });
+
+        panel.append(heading, contactList);
+        dialingPanel.parentElement.append(panel);
+        panels.push(panel);
+    });
 }
 
 function addCallButtons() {
@@ -164,14 +260,14 @@ function handleSwipeEnd(clientX, clientY) {
         return;
     }
 
-    const currentIndex = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
     // Deslizar a la derecha avanza al siguiente tab; a la izquierda vuelve al anterior.
-    showTab(currentIndex + (deltaX > 0 ? 1 : -1), true, deltaX > 0 ? 1 : -1);
+    showTab(activePanelIndex + (deltaX > 0 ? 1 : -1), true, deltaX > 0 ? 1 : -1);
 }
 
 weekTab.addEventListener('click', () => showWeekTab(true));
 dialingTab.addEventListener('click', () => showWeekTab(false));
 addCallButtons();
+addVirtualContactPanels();
 
 swipeSurface.addEventListener('touchstart', (event) => {
     if (isInteractiveTarget(event.target)) {
