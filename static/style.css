@@ -29,6 +29,8 @@
     --call-bg: #2f8b57;
     --call-hover: #246f45;
     --call-text: #ffffff;
+    --easy-tab-active-bg: #26394b;
+    --easy-tab-active-text: #ffffff;
 
     --day-bg-current: #f6f8fa;
     --day-bg-other: #edf1f4;
@@ -1005,14 +1007,23 @@ body {
 .easy-mode-container .week-tabs {
     width: 100%;
     margin-bottom: 0.75rem;
-    border-right: 0;
-    border-left: 0;
+    border: 2px solid var(--grid-border);
     border-radius: 0;
 }
 
 .easy-mode-container .week-tab {
     flex: 1;
-    padding: 0.9rem 1rem;
+    padding: 1rem 0.75rem;
+    border-right: 2px solid var(--grid-border);
+    background: var(--surface-alt);
+    color: var(--text-main);
+    font-size: 1.15rem;
+    font-weight: 700;
+}
+
+.easy-mode-container .week-tab.is-active {
+    background: var(--easy-tab-active-bg);
+    color: var(--easy-tab-active-text);
 }
 
 .easy-mode-access {
@@ -1677,6 +1688,8 @@ body {
         --call-bg: #61c487;
         --call-hover: #78d29a;
         --call-text: #102018;
+        --easy-tab-active-bg: #e1e9ee;
+        --easy-tab-active-text: #17232d;
 
         --day-bg-current: #28323b;
         --day-bg-other: #2b3640;
