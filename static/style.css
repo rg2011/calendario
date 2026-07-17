@@ -1522,6 +1522,7 @@ body {
 
     .week-tabs {
         width: calc(100% - 1.5rem);
+        margin-bottom: 0;
     }
 
     .easy-mode-container .week-tabs {
@@ -1537,7 +1538,7 @@ body {
     }
 
     .week-tab-panel {
-        padding: 0.75rem;
+        padding: 0;
     }
 
     .dialing-list {
