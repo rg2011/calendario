@@ -260,8 +260,9 @@ function handleSwipeEnd(clientX, clientY) {
         return;
     }
 
-    // Deslizar a la derecha avanza al siguiente tab; a la izquierda vuelve al anterior.
-    showTab(activePanelIndex + (deltaX > 0 ? 1 : -1), true, deltaX > 0 ? 1 : -1);
+    // De derecha a izquierda avanza: la siguiente pantalla entra por la derecha.
+    const advances = deltaX < 0;
+    showTab(activePanelIndex + (advances ? 1 : -1), true, advances ? -1 : 1);
 }
 
 weekTab.addEventListener('click', () => showWeekTab(true));
