@@ -6,13 +6,16 @@
 <div class="settings-container contacts-container">
     <section class="rule-card contacts-card">
         <h2>Contactos</h2>
-        <p class="contacts-description">Asocia un nombre a cada código de marcación abreviada.</p>
+        <p class="contacts-description">Asocia un nombre a cada código de marcación abreviada. Puedes vincularlo opcionalmente con un contacto de tu teléfono; su teléfono solo se guarda en este navegador.</p>
         <form id="contactsForm">
             <div class="contacts-grid">
                 {% for shortcut, name in contacts.items() %}
                 <div class="form-group contact-field">
                     <label for="contact-{{ shortcut }}">{{ shortcut }}</label>
                     <input id="contact-{{ shortcut }}" name="{{ shortcut }}" type="text" value="{{ name }}" maxlength="100" placeholder="Nombre del contacto" autocomplete="name">
+                    <button class="btn contact-picker-button" type="button" data-shortcut="{{ shortcut }}" aria-label="Elegir contacto de la agenda para {{ shortcut }}" title="Elegir de la agenda">
+                        <i class="fa-solid fa-address-book" aria-hidden="true"></i>
+                    </button>
                 </div>
                 {% endfor %}
             </div>
@@ -30,6 +33,70 @@
 const contactsForm = document.getElementById('contactsForm');
 const contactsStatus = document.getElementById('contactsStatus');
 const contactsApiUrl = {{ url_for('manage_contacts')|tojson }};
+const localPhoneContactsKey = 'calendario.phone-contacts.v1';
+
+function getLocalPhoneContacts() {
+    try {
+        const contacts = JSON.parse(localStorage.getItem(localPhoneContactsKey) || '{}');
+        return contacts && typeof contacts === 'object' ? contacts : {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function saveLocalPhoneContacts(contacts) {
+    localStorage.setItem(localPhoneContactsKey, JSON.stringify(contacts));
+}
+
+async function pickPhoneContact(button) {
+    if (!('contacts' in navigator) || !navigator.contacts.select) {
+        contactsStatus.textContent = 'Tu navegador no permite elegir contactos de la agenda.';
+        return;
+    }
+
+    try {
+        const supportedProperties = await navigator.contacts.getProperties();
+        const properties = ['name', 'tel'].filter((property) => supportedProperties.includes(property));
+        if (!properties.includes('tel')) {
+            contactsStatus.textContent = 'La agenda de este dispositivo no permite compartir teléfonos.';
+            return;
+        }
+
+        const [phoneContact] = await navigator.contacts.select(properties, { multiple: false });
+        if (!phoneContact) {
+            return;
+        }
+
+        const phone = phoneContact.tel?.find(Boolean);
+        if (!phone) {
+            contactsStatus.textContent = 'El contacto elegido no tiene un teléfono disponible.';
+            return;
+        }
+
+        const input = document.getElementById(`contact-${button.dataset.shortcut}`);
+        const contactName = phoneContact.name?.find(Boolean) || '';
+        const assignedName = input.value.trim() || contactName;
+        if (!assignedName) {
+            contactsStatus.textContent = 'El contacto elegido no tiene nombre. Escribe uno antes de asociarlo.';
+            return;
+        }
+
+        input.value = assignedName;
+        const localContacts = getLocalPhoneContacts();
+        localContacts[button.dataset.shortcut] = {
+            shortcut: button.dataset.shortcut,
+            assignedName,
+            name: contactName || assignedName,
+            tel: phone,
+        };
+        saveLocalPhoneContacts(localContacts);
+        contactsStatus.textContent = 'Contacto asociado solo en este navegador. Guarda los contactos para aplicar el nombre a la libreta.';
+    } catch (error) {
+        if (error.name !== 'AbortError') {
+            contactsStatus.textContent = 'No se ha podido elegir el contacto de la agenda.';
+        }
+    }
+}
 
 contactsForm.addEventListener('submit', async function(event) {
     event.preventDefault();
@@ -49,6 +116,10 @@ contactsForm.addEventListener('submit', async function(event) {
     } catch (error) {
         contactsStatus.textContent = 'No se han podido guardar los contactos.';
     }
+});
+
+document.querySelectorAll('.contact-picker-button').forEach((button) => {
+    button.addEventListener('click', () => pickPhoneContact(button));
 });
 </script>
 {% endblock %}

@@ -11,31 +11,35 @@
 <p class="easy-mode-access"><a href="{{ url_for('easy_mode') }}">Abrir modo sencillo</a></p>
 {% endif %}
 
-<section id="weekPanel" role="tabpanel" aria-labelledby="weekTab">
-    <div class="week-container">
-        <div class="week-layout">
-            {% for day in days %}
-            <article class="week-day"
-                data-person="{{ day.person }}"
-                data-date="{{ day.date }}">
-                <time class="week-day-date" datetime="{{ day.date.isoformat() }}">{{ day.label }}</time>
-                <div class="week-day-person">{{ day.person }}</div>
+<div class="week-tab-panels">
+    <section id="weekPanel" class="week-tab-panel" role="tabpanel" aria-labelledby="weekTab">
+        <div class="week-container">
+            <div class="week-layout">
+                {% for day in days %}
+                <article class="week-day"
+                    data-person="{{ day.person }}"
+                    data-date="{{ day.date }}">
+                    <time class="week-day-date" datetime="{{ day.date.isoformat() }}">{{ day.label }}</time>
+                    <div class="week-day-person">{{ day.person }}</div>
+                </article>
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+
+    <section id="dialingPanel" class="week-tab-panel" role="tabpanel" aria-labelledby="dialingTab" hidden>
+        <div class="dialing-list">
+            {% for shortcut, name in contacts.items() %}
+            <article class="dialing-contact {% if not name %}is-empty{% endif %}"
+                data-shortcut="{{ shortcut }}"
+                data-assigned-name="{{ name }}">
+                <span class="dialing-shortcut">{{ shortcut }}</span>
+                <span class="dialing-name">{{ name or 'Sin asignar' }}</span>
             </article>
             {% endfor %}
         </div>
-    </div>
-</section>
-
-<section id="dialingPanel" class="week-tab-panel" role="tabpanel" aria-labelledby="dialingTab" hidden>
-    <div class="dialing-list">
-        {% for shortcut, name in contacts.items() %}
-        <article class="dialing-contact {% if not name %}is-empty{% endif %}">
-            <span class="dialing-shortcut">{{ shortcut }}</span>
-            <span class="dialing-name">{{ name or 'Sin asignar' }}</span>
-        </article>
-        {% endfor %}
-    </div>
-</section>
+    </section>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -44,6 +48,14 @@ const weekTab = document.getElementById('weekTab');
 const dialingTab = document.getElementById('dialingTab');
 const weekPanel = document.getElementById('weekPanel');
 const dialingPanel = document.getElementById('dialingPanel');
+const tabs = [weekTab, dialingTab];
+const panels = [weekPanel, dialingPanel];
+const swipeSurface = document.querySelector('.container');
+const swipeThreshold = 60;
+const localPhoneContactsKey = 'calendario.phone-contacts.v1';
+let swipeStartX = null;
+let swipeStartY = null;
+let isTabTransitioning = false;
 
 function showWeekTab(showWeek) {
     weekTab.classList.toggle('is-active', showWeek);
@@ -54,7 +66,137 @@ function showWeekTab(showWeek) {
     dialingPanel.hidden = showWeek;
 }
 
+function showTab(index, animate = false, direction = 1) {
+    const normalizedIndex = (index + tabs.length) % tabs.length;
+    const currentIndex = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
+
+    if (normalizedIndex === currentIndex || isTabTransitioning) {
+        return;
+    }
+
+    if (!animate) {
+        showWeekTab(normalizedIndex === 0);
+        return;
+    }
+
+    isTabTransitioning = true;
+    const currentPanel = panels[currentIndex];
+    const nextPanel = panels[normalizedIndex];
+    nextPanel.hidden = false;
+    currentPanel.classList.add(direction > 0 ? 'is-sliding-out-right' : 'is-sliding-out-left');
+    nextPanel.classList.add(direction > 0 ? 'is-sliding-in-left' : 'is-sliding-in-right');
+
+    let completedAnimations = 0;
+    function finishTransition() {
+        completedAnimations += 1;
+        if (completedAnimations !== 2) {
+            return;
+        }
+
+        currentPanel.classList.remove('is-sliding-out-right', 'is-sliding-out-left');
+        nextPanel.classList.remove('is-sliding-in-left', 'is-sliding-in-right');
+        showWeekTab(normalizedIndex === 0);
+        isTabTransitioning = false;
+    }
+
+    currentPanel.addEventListener('animationend', finishTransition, { once: true });
+    nextPanel.addEventListener('animationend', finishTransition, { once: true });
+}
+
+function resetSwipeStart() {
+    swipeStartX = null;
+    swipeStartY = null;
+}
+
+function isInteractiveTarget(target) {
+    return Boolean(target && target.closest('a, button, input, select, textarea'));
+}
+
+function getLocalPhoneContacts() {
+    try {
+        const contacts = JSON.parse(localStorage.getItem(localPhoneContactsKey) || '{}');
+        return contacts && typeof contacts === 'object' ? contacts : {};
+    } catch (error) {
+        return {};
+    }
+}
+
+function addCallButtons() {
+    const localContacts = getLocalPhoneContacts();
+    document.querySelectorAll('.dialing-contact').forEach((contactElement) => {
+        const phoneContact = localContacts[contactElement.dataset.shortcut];
+        const canCall = Boolean(
+            phoneContact
+            && phoneContact.assignedName === contactElement.dataset.assignedName
+            && phoneContact.tel
+        );
+
+        const callButton = document.createElement(canCall ? 'a' : 'span');
+        callButton.className = `dialing-call${canCall ? '' : ' is-disabled'}`;
+        callButton.setAttribute(
+            'aria-label',
+            canCall ? `Llamar a ${phoneContact.name || phoneContact.assignedName}` : 'No hay teléfono asociado'
+        );
+        callButton.title = canCall ? 'Llamar' : 'No hay teléfono asociado';
+        if (canCall) {
+            callButton.href = `tel:${phoneContact.tel}`;
+        } else {
+            callButton.setAttribute('aria-disabled', 'true');
+        }
+        const callIcon = document.createElement('i');
+        callIcon.className = 'fa-solid fa-phone';
+        callIcon.setAttribute('aria-hidden', 'true');
+        callButton.append(callIcon);
+        contactElement.append(callButton);
+    });
+}
+
+function handleSwipeEnd(clientX, clientY) {
+    if (swipeStartX === null || swipeStartY === null) {
+        return;
+    }
+
+    const deltaX = clientX - swipeStartX;
+    const deltaY = clientY - swipeStartY;
+    resetSwipeStart();
+
+    if (Math.abs(deltaX) < swipeThreshold || Math.abs(deltaX) <= Math.abs(deltaY)) {
+        return;
+    }
+
+    const currentIndex = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
+    // Deslizar a la derecha avanza al siguiente tab; a la izquierda vuelve al anterior.
+    showTab(currentIndex + (deltaX > 0 ? 1 : -1), true, deltaX > 0 ? 1 : -1);
+}
+
 weekTab.addEventListener('click', () => showWeekTab(true));
 dialingTab.addEventListener('click', () => showWeekTab(false));
+addCallButtons();
+
+swipeSurface.addEventListener('touchstart', (event) => {
+    if (isInteractiveTarget(event.target)) {
+        resetSwipeStart();
+        return;
+    }
+
+    if (event.touches.length !== 1) {
+        resetSwipeStart();
+        return;
+    }
+
+    swipeStartX = event.touches[0].clientX;
+    swipeStartY = event.touches[0].clientY;
+}, { passive: true });
+
+document.addEventListener('touchend', (event) => {
+    if (isInteractiveTarget(event.target) || event.changedTouches.length !== 1) {
+        resetSwipeStart();
+        return;
+    }
+
+    handleSwipeEnd(event.changedTouches[0].clientX, event.changedTouches[0].clientY);
+}, { passive: true });
+
+document.addEventListener('touchcancel', resetSwipeStart, { passive: true });
 </script>
 {% endblock %}
