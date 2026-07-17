@@ -767,6 +767,15 @@ body {
     color: var(--text-on-accent);
 }
 
+.contact-picker-button.is-local-contact {
+    background: var(--call-bg);
+    color: var(--call-text);
+}
+
+.contact-picker-button.is-local-contact:hover {
+    background: var(--call-hover);
+}
+
 .contacts-actions {
     display: flex;
     align-items: center;

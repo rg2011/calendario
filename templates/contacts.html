@@ -48,6 +48,30 @@ function saveLocalPhoneContacts(contacts) {
     localStorage.setItem(localPhoneContactsKey, JSON.stringify(contacts));
 }
 
+function updateLocalContactIndicators() {
+    const localContacts = getLocalPhoneContacts();
+    document.querySelectorAll('.contact-picker-button').forEach((button) => {
+        const shortcut = button.dataset.shortcut;
+        const input = document.getElementById(`contact-${shortcut}`);
+        const phoneContact = localContacts[shortcut];
+        const hasValidLocalContact = Boolean(
+            phoneContact
+            && phoneContact.assignedName === input.value.trim()
+            && phoneContact.name
+            && phoneContact.tel
+        );
+
+        button.classList.toggle('is-local-contact', hasValidLocalContact);
+        button.title = hasValidLocalContact ? 'Contacto de la agenda asociado' : 'Elegir de la agenda';
+        button.setAttribute(
+            'aria-label',
+            hasValidLocalContact
+                ? `Contacto de la agenda asociado a ${shortcut}`
+                : `Elegir contacto de la agenda para ${shortcut}`
+        );
+    });
+}
+
 async function pickPhoneContact(button) {
     if (!('contacts' in navigator) || !navigator.contacts.select) {
         contactsStatus.textContent = 'Tu navegador no permite elegir contactos de la agenda.';
@@ -90,6 +114,7 @@ async function pickPhoneContact(button) {
             tel: phone,
         };
         saveLocalPhoneContacts(localContacts);
+        updateLocalContactIndicators();
         contactsStatus.textContent = 'Contacto asociado solo en este navegador. Guarda los contactos para aplicar el nombre a la libreta.';
     } catch (error) {
         if (error.name !== 'AbortError') {
@@ -121,5 +146,11 @@ contactsForm.addEventListener('submit', async function(event) {
 document.querySelectorAll('.contact-picker-button').forEach((button) => {
     button.addEventListener('click', () => pickPhoneContact(button));
 });
+
+contactsForm.querySelectorAll('input').forEach((input) => {
+    input.addEventListener('input', updateLocalContactIndicators);
+});
+
+updateLocalContactIndicators();
 </script>
 {% endblock %}
