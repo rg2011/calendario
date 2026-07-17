@@ -5,8 +5,8 @@
 {% block content %}
 <div class="week-tabs" role="tablist" aria-label="Vista de semana">
     <button id="weekTab" class="week-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="weekPanel">Semana</button>
-    <button id="dialingTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="dialingPanel">Libreta</button>
-    <button id="extraContactsTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="extraContactsPanel" hidden>Contactos</button>
+    <button id="dialingTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="dialingPanel">Fijo</button>
+    <button id="extraContactsTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="extraContactsPanel" hidden>Móviles</button>
 </div>
 {% if not easy_mode %}
 <p class="easy-mode-access"><a href="{{ url_for('easy_mode') }}">Abrir modo sencillo</a></p>
@@ -21,7 +21,9 @@
                     data-person="{{ day.person }}"
                     data-date="{{ day.date }}">
                     <time class="week-day-date" datetime="{{ day.date.isoformat() }}">{{ day.label }}</time>
-                    <div class="week-day-person">{{ day.person }}</div>
+                    <div class="week-day-person">
+                        {% if loop.index0 == 0 %}<span class="week-day-context">Hoy ·&nbsp;</span>{% elif loop.index0 == 1 %}<span class="week-day-context">Mañana ·&nbsp;</span>{% endif %}<strong class="week-day-name">{{ day.person }}</strong>
+                    </div>
                 </article>
                 {% endfor %}
             </div>

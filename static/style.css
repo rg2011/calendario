@@ -1217,8 +1217,8 @@ body {
 .week-day {
     display: flex;
     flex-direction: column;
-    min-height: 9rem;
-    padding: 1.1rem 1.2rem;
+    min-height: 6rem;
+    padding: 0.8rem 1rem;
     overflow: hidden;
     background: var(--surface);
     border: 1px solid var(--grid-border);
@@ -1262,6 +1262,14 @@ body {
     font-size: 1.3rem;
     font-weight: 700;
     color: var(--text-main);
+}
+
+.week-day-context {
+    font-weight: 400;
+}
+
+.week-day-name {
+    font-weight: 700;
 }
 
 .week-day[data-person="Juanmi"] .week-day-person {
