@@ -1085,10 +1085,6 @@ body {
     padding: 0.5rem 0;
 }
 
-.week-tab-panel[hidden] {
-    display: none !important;
-}
-
 .week-tab-panel.is-sliding-out-right {
     animation: week-panel-out-right 220ms ease-in both;
 }
@@ -1541,12 +1537,12 @@ body {
     }
 
     .week-tab-panel {
-        padding: 0.75rem;
+        padding: 0.5rem;
     }
 
     .dialing-list {
         grid-template-columns: 1fr;
-        gap: 0.5rem;
+        gap: 0.25rem;
     }
 
     .dialing-contact {
