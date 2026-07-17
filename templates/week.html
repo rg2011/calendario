@@ -144,6 +144,16 @@ function getExtraPhoneContacts() {
     }
 }
 
+function getContactInitial(name) {
+    const normalizedName = name
+        .trim()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase();
+    const initial = Array.from(normalizedName)[0];
+    return initial && initial >= 'A' && initial <= 'Z' ? initial : '#';
+}
+
 function renderExtraContacts() {
     const contacts = getExtraPhoneContacts()
         .filter((contact) => contact && typeof contact.name === 'string' && typeof contact.tel === 'string' && contact.name.trim() && contact.tel)
@@ -161,32 +171,56 @@ function renderExtraContacts() {
         return;
     }
 
+    const contactsByInitial = new Map();
     contacts.forEach((contact) => {
-        const contactElement = document.createElement('article');
-        contactElement.className = 'dialing-contact';
-        const initial = document.createElement('span');
-        initial.className = 'dialing-shortcut';
-        initial.textContent = Array.from(contact.name.trim())[0].toUpperCase();
-        const details = document.createElement('div');
-        details.className = 'extra-dialing-details';
-        const name = document.createElement('span');
-        name.className = 'dialing-name';
-        name.textContent = contact.name;
-        const phone = document.createElement('span');
-        phone.className = 'extra-dialing-phone';
-        phone.textContent = contact.tel;
-        details.append(name, phone);
-        const callButton = document.createElement('a');
-        callButton.className = 'dialing-call';
-        callButton.href = `tel:${contact.tel}`;
-        callButton.setAttribute('aria-label', `Llamar a ${contact.name}`);
-        callButton.title = 'Llamar';
-        const callIcon = document.createElement('i');
-        callIcon.className = 'fa-solid fa-phone';
-        callIcon.setAttribute('aria-hidden', 'true');
-        callButton.append(callIcon);
-        contactElement.append(initial, details, callButton);
-        extraContactsList.append(contactElement);
+        const initial = getContactInitial(contact.name);
+        const group = contactsByInitial.get(initial) || [];
+        group.push(contact);
+        contactsByInitial.set(initial, group);
+    });
+
+    const initials = [...contactsByInitial.keys()].sort((first, second) => {
+        if (first === '#') return 1;
+        if (second === '#') return -1;
+        return first.localeCompare(second);
+    });
+
+    initials.forEach((initial) => {
+        const group = document.createElement('section');
+        group.className = 'extra-contact-group';
+        const heading = document.createElement('h2');
+        heading.className = 'extra-contacts-initial';
+        heading.textContent = initial === '#' ? 'Otros' : initial;
+        const groupList = document.createElement('div');
+        groupList.className = 'dialing-list';
+
+        contactsByInitial.get(initial).forEach((contact) => {
+            const contactElement = document.createElement('article');
+            contactElement.className = 'dialing-contact';
+            const details = document.createElement('div');
+            details.className = 'extra-dialing-details';
+            const name = document.createElement('span');
+            name.className = 'dialing-name';
+            name.textContent = contact.name;
+            const phone = document.createElement('span');
+            phone.className = 'extra-dialing-phone';
+            phone.textContent = contact.tel;
+            details.append(name, phone);
+            const callButton = document.createElement('a');
+            callButton.className = 'dialing-call';
+            callButton.href = `tel:${contact.tel}`;
+            callButton.setAttribute('aria-label', `Llamar a ${contact.name}`);
+            callButton.title = 'Llamar';
+            const callIcon = document.createElement('i');
+            callIcon.className = 'fa-solid fa-phone';
+            callIcon.setAttribute('aria-hidden', 'true');
+            callButton.append(callIcon);
+            contactElement.append(details, callButton);
+            groupList.append(contactElement);
+        });
+
+        group.append(heading, groupList);
+        extraContactsList.append(group);
     });
 }
 

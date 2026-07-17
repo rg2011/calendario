@@ -1170,6 +1170,18 @@ body {
     gap: 0.15rem;
 }
 
+.extra-contact-group + .extra-contact-group {
+    margin-top: 1.25rem;
+}
+
+.extra-contacts-initial {
+    margin: 0 0 0.6rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 2px solid var(--accent);
+    color: var(--text-main);
+    font-size: 1.1rem;
+}
+
 .extra-dialing-phone {
     color: var(--text-muted);
     font-size: 0.85rem;
