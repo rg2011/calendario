@@ -25,6 +25,18 @@
             </div>
         </form>
     </section>
+
+    <section class="rule-card contacts-card extra-contacts-card">
+        <h2>Contactos extra</h2>
+        <p class="contacts-description">Contactos importados de la agenda sin marcación rápida. Se guardan solo en este navegador.</p>
+        <div id="extraContactsList" class="extra-contacts-list" aria-live="polite"></div>
+        <div class="contacts-actions">
+            <button id="importExtraContacts" class="btn btn-save" type="button">
+                <i class="fa-solid fa-address-book" aria-hidden="true"></i> Importar de la agenda
+            </button>
+            <p id="extraContactsStatus" class="contacts-status" aria-live="polite"></p>
+        </div>
+    </section>
 </div>
 {% endblock %}
 
@@ -34,6 +46,10 @@ const contactsForm = document.getElementById('contactsForm');
 const contactsStatus = document.getElementById('contactsStatus');
 const contactsApiUrl = {{ url_for('manage_contacts')|tojson }};
 const localPhoneContactsKey = 'calendario.phone-contacts.v1';
+const extraPhoneContactsKey = 'calendario.extra-phone-contacts.v1';
+const extraContactsList = document.getElementById('extraContactsList');
+const extraContactsStatus = document.getElementById('extraContactsStatus');
+const importExtraContactsButton = document.getElementById('importExtraContacts');
 
 function getLocalPhoneContacts() {
     try {
@@ -46,6 +62,125 @@ function getLocalPhoneContacts() {
 
 function saveLocalPhoneContacts(contacts) {
     localStorage.setItem(localPhoneContactsKey, JSON.stringify(contacts));
+}
+
+function supportsContactPicker() {
+    return 'contacts' in navigator
+        && typeof navigator.contacts.select === 'function'
+        && typeof navigator.contacts.getProperties === 'function';
+}
+
+function getExtraPhoneContacts() {
+    try {
+        const contacts = JSON.parse(localStorage.getItem(extraPhoneContactsKey) || '[]');
+        return Array.isArray(contacts) ? contacts : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+function saveExtraPhoneContacts(contacts) {
+    localStorage.setItem(extraPhoneContactsKey, JSON.stringify(contacts));
+}
+
+function newExtraContactId() {
+    return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+}
+
+function renderExtraContacts() {
+    const contacts = getExtraPhoneContacts();
+    const canUseContactPicker = supportsContactPicker();
+    extraContactsList.replaceChildren();
+
+    if (!contacts.length) {
+        const emptyMessage = document.createElement('p');
+        emptyMessage.className = 'extra-contacts-empty';
+        emptyMessage.textContent = 'Aún no has importado contactos extra.';
+        extraContactsList.append(emptyMessage);
+        return;
+    }
+
+    contacts.forEach((contact) => {
+        const contactItem = document.createElement('article');
+        contactItem.className = 'extra-contact';
+
+        const details = document.createElement('div');
+        details.className = 'extra-contact-details';
+        const name = document.createElement('span');
+        name.className = 'extra-contact-name';
+        name.textContent = contact.name;
+        const phone = document.createElement('span');
+        phone.className = 'extra-contact-phone';
+        phone.textContent = contact.tel;
+        details.append(name, phone);
+
+        const deleteButton = document.createElement('button');
+        deleteButton.className = 'btn extra-contact-delete';
+        deleteButton.type = 'button';
+        deleteButton.dataset.contactId = contact.id;
+        deleteButton.disabled = !canUseContactPicker;
+        deleteButton.setAttribute('aria-label', `Eliminar a ${contact.name}`);
+        deleteButton.title = canUseContactPicker ? 'Eliminar contacto' : 'La agenda no está disponible en este navegador';
+        const deleteIcon = document.createElement('i');
+        deleteIcon.className = 'fa-solid fa-trash';
+        deleteIcon.setAttribute('aria-hidden', 'true');
+        deleteButton.append(deleteIcon);
+        contactItem.append(details, deleteButton);
+        extraContactsList.append(contactItem);
+    });
+}
+
+async function importExtraContacts() {
+    if (!supportsContactPicker()) {
+        extraContactsStatus.textContent = 'Tu navegador no permite importar contactos de la agenda.';
+        return;
+    }
+
+    try {
+        const supportedProperties = await navigator.contacts.getProperties();
+        const properties = ['name', 'tel'].filter((property) => supportedProperties.includes(property));
+        if (!properties.includes('name') || !properties.includes('tel')) {
+            extraContactsStatus.textContent = 'La agenda de este dispositivo no permite compartir nombres y teléfonos.';
+            return;
+        }
+
+        const selectedContacts = await navigator.contacts.select(properties, { multiple: true });
+        const extraContacts = getExtraPhoneContacts();
+        let importedCount = 0;
+        selectedContacts.forEach((selectedContact) => {
+            const name = selectedContact.name?.find(Boolean);
+            const tel = selectedContact.tel?.find(Boolean);
+            if (!name || !tel || extraContacts.some((contact) => contact.name === name && contact.tel === tel)) {
+                return;
+            }
+
+            extraContacts.push({ id: newExtraContactId(), name, tel });
+            importedCount += 1;
+        });
+
+        if (!importedCount) {
+            extraContactsStatus.textContent = 'No se han añadido contactos nuevos con nombre y teléfono.';
+            return;
+        }
+
+        saveExtraPhoneContacts(extraContacts);
+        renderExtraContacts();
+        extraContactsStatus.textContent = importedCount === 1 ? 'Contacto importado.' : `${importedCount} contactos importados.`;
+    } catch (error) {
+        if (error?.name !== 'AbortError') {
+            extraContactsStatus.textContent = 'No se han podido importar los contactos.';
+        }
+    }
+}
+
+function deleteExtraContact(contactId) {
+    if (!supportsContactPicker()) {
+        return;
+    }
+
+    saveExtraPhoneContacts(getExtraPhoneContacts().filter((contact) => contact.id !== contactId));
+    renderExtraContacts();
+    extraContactsStatus.textContent = 'Contacto eliminado.';
 }
 
 function updateLocalContactIndicators() {
@@ -73,7 +208,7 @@ function updateLocalContactIndicators() {
 }
 
 async function pickPhoneContact(button) {
-    if (!('contacts' in navigator) || !navigator.contacts.select) {
+    if (!supportsContactPicker()) {
         contactsStatus.textContent = 'Tu navegador no permite elegir contactos de la agenda.';
         return;
     }
@@ -147,10 +282,23 @@ document.querySelectorAll('.contact-picker-button').forEach((button) => {
     button.addEventListener('click', () => pickPhoneContact(button));
 });
 
+importExtraContactsButton.addEventListener('click', importExtraContacts);
+extraContactsList.addEventListener('click', (event) => {
+    const deleteButton = event.target.closest('.extra-contact-delete');
+    if (deleteButton && !deleteButton.disabled) {
+        deleteExtraContact(deleteButton.dataset.contactId);
+    }
+});
+
 contactsForm.querySelectorAll('input').forEach((input) => {
     input.addEventListener('input', updateLocalContactIndicators);
 });
 
 updateLocalContactIndicators();
+importExtraContactsButton.disabled = !supportsContactPicker();
+if (!supportsContactPicker()) {
+    extraContactsStatus.textContent = 'La importación y eliminación requieren un navegador compatible con la agenda.';
+}
+renderExtraContacts();
 </script>
 {% endblock %}
