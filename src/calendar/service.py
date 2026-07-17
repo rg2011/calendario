@@ -162,7 +162,7 @@ class CalendarService:
     ) -> dict[str, Any]:
         """Construye el contexto completo de render del calendario semanal."""
         days: list[dict[str, Any]] = [{"date": start},]
-        days.extend({"date": start + timedelta(days=d)} for d in range(1,7))
+        days.extend({"date": start + timedelta(days=d)} for d in range(1, 8))
         absences_by_date = self._absence_service.get_absences_for_dates(day["date"] for day in days)
         self._logger.info("Render semana %s", start.isoformat())
 

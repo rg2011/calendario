@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Contactos{% endblock %}
+
+{% block content %}
+<div class="settings-container contacts-container">
+    <section class="rule-card contacts-card">
+        <h2>Contactos</h2>
+        <p class="contacts-description">Asocia un nombre a cada código de marcación abreviada.</p>
+        <form id="contactsForm">
+            <div class="contacts-grid">
+                {% for shortcut, name in contacts.items() %}
+                <div class="form-group contact-field">
+                    <label for="contact-{{ shortcut }}">{{ shortcut }}</label>
+                    <input id="contact-{{ shortcut }}" name="{{ shortcut }}" type="text" value="{{ name }}" maxlength="100" placeholder="Nombre del contacto" autocomplete="name">
+                </div>
+                {% endfor %}
+            </div>
+            <div class="contacts-actions">
+                <button class="btn btn-save" type="submit">Guardar contactos</button>
+                <p id="contactsStatus" class="contacts-status" aria-live="polite"></p>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const contactsForm = document.getElementById('contactsForm');
+const contactsStatus = document.getElementById('contactsStatus');
+const contactsApiUrl = {{ url_for('manage_contacts')|tojson }};
+
+contactsForm.addEventListener('submit', async function(event) {
+    event.preventDefault();
+    const contacts = Object.fromEntries(new FormData(contactsForm).entries());
+    contactsStatus.textContent = 'Guardando…';
+
+    try {
+        const response = await fetch(contactsApiUrl, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(contacts),
+        });
+        const data = await response.json();
+        contactsStatus.textContent = data.success
+            ? 'Contactos guardados.'
+            : (data.error || 'No se han podido guardar los contactos.');
+    } catch (error) {
+        contactsStatus.textContent = 'No se han podido guardar los contactos.';
+    }
+});
+</script>
+{% endblock %}

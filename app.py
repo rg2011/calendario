@@ -21,6 +21,7 @@ from src.absences import serialize_absence
 from src.alexa import New as NewAlexaHandler
 from src.bootstrap import initialize_runtime, register_startup
 from src.calendar import New as NewCalendarService
+from src.contacts import New as NewContactService
 from src.holidays import New as NewHolidayProvider
 from src.httpcache import (
     New as NewHttpCache,
@@ -28,6 +29,7 @@ from src.httpcache import (
 from src.httpcache import (
     absences_cache_key,
     calendar_cache_key,
+    contacts_cache_key,
     current_month_cache_key,
     settings_cache_key,
     week_cache_key,
@@ -72,6 +74,7 @@ ALEXA_SKILL_ID = os.environ.get("ALEXA_SKILL_ID", "").strip()
 
 app_state = NewHttpCache()
 absence_service = NewAbsenceService(people=PEOPLE, cache_state=app_state)
+contact_service = NewContactService(cache_state=app_state)
 holidays = NewHolidayProvider(logger=app.logger, cache_state=app_state)
 shift_service = NewShiftService(
     people=PEOPLE,
@@ -231,6 +234,41 @@ def web_app_manifest(secret):
     )
 
 
+@app.route("/<secret>/easy-mode.webmanifest")
+def easy_mode_manifest(secret):
+    easy_mode_url = url_for("easy_mode")
+    manifest = {
+        "id": easy_mode_url,
+        "name": "Calendario de Turnos — modo sencillo",
+        "short_name": "Turnos",
+        "description": "Vista sencilla de turnos y marcación.",
+        "lang": "es-ES",
+        "start_url": easy_mode_url,
+        "scope": easy_mode_url,
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#5b8def",
+        "theme_color": "#31475f",
+        "icons": [
+            {
+                "src": url_for("secret_static", filename="icons/icon-192.png"),
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": url_for("secret_static", filename="icons/icon-512.png"),
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any",
+            },
+        ],
+    }
+    return app.response_class(
+        json.dumps(manifest, ensure_ascii=False), mimetype="application/manifest+json"
+    )
+
+
 @app.route("/<secret>/api/rules", methods=["GET", "POST"])
 def manage_rules(secret):
     if request.method == "GET":
@@ -268,6 +306,15 @@ def manage_absences(secret):
     return jsonify(payload), status
 
 
+@app.route("/<secret>/api/contacts", methods=["GET", "POST"])
+def manage_contacts(secret):
+    if request.method == "GET":
+        return jsonify(contact_service.contacts_by_shortcut())
+
+    payload, status = contact_service.save_contacts(request.get_json() or {})
+    return jsonify(payload), status
+
+
 @app.route("/<secret>/settings")
 @app_state.cached_view(lambda secret: access_cache_key(settings_cache_key()), ("data",))
 def settings(secret):
@@ -293,6 +340,19 @@ def week(secret):
         date.today(),
         include_notes=current_access_mode() != READ_ONLY,
     )
+    context["contacts"] = contact_service.contacts_by_shortcut()
+    return render_template("week.html", **context)
+
+
+@app.route("/<secret>/easy")
+@app_state.cached_view(lambda secret: access_cache_key(f"easy:{week_cache_key()}"), ("data",))
+def easy_mode(secret):
+    context = calendar_service.build_week_context(
+        date.today(),
+        include_notes=current_access_mode() != READ_ONLY,
+    )
+    context["contacts"] = contact_service.contacts_by_shortcut()
+    context["easy_mode"] = True
     return render_template("week.html", **context)
 
 
@@ -305,6 +365,12 @@ def absences(secret):
         "absences": [serialize_absence(absence) for absence in absences_list],
     }
     return render_template("absences.html", **context)
+
+
+@app.route("/<secret>/contacts")
+@app_state.cached_view(lambda secret: access_cache_key(contacts_cache_key()), ("data",))
+def contacts(secret):
+    return render_template("contacts.html", contacts=contact_service.contacts_by_shortcut())
 
 
 @app.route("/<secret>/static/<path:filename>")

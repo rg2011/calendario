@@ -128,6 +128,10 @@ def absences_cache_key() -> str:
     return "absences"
 
 
+def contacts_cache_key() -> str:
+    return "contacts"
+
+
 def week_cache_key() -> str:
     today = date.today().isoformat()
     return f"week:{today}"
