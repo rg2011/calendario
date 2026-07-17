@@ -1147,6 +1147,7 @@ body {
 .dialing-contact {
     display: flex;
     align-items: center;
+    min-width: 0;
     gap: 0.75rem;
     min-height: 4.5rem;
     padding: 0.8rem 1rem;
@@ -1541,7 +1542,7 @@ body {
     }
 
     .dialing-list {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
         gap: 0.25rem;
     }
 
