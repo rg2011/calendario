@@ -86,7 +86,7 @@ body {
     background: linear-gradient(180deg, var(--bg-start) 0%, var(--bg-end) 100%);
     background-color: var(--bg-end);
     color: var(--text-main);
-    min-height: 100vh;
+    min-height: 100svh;
     display: flex;
     flex-direction: column;
 }
@@ -1005,8 +1005,8 @@ body {
 }
 
 .easy-mode-container .week-tabs {
-    position: sticky;
-    top: 0;
+    /*position: sticky;
+    top: 0;*/
     z-index: 10;
     width: 100%;
     margin-bottom: 0.75rem;
@@ -1344,7 +1344,7 @@ body {
     body {
         background: var(--surface);
         background-color: var(--surface);
-        min-height: 100dvh;
+        min-height: 100svh;
     }
 
     .navbar {
