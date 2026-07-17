@@ -722,6 +722,10 @@ body {
     margin: 0 auto;
 }
 
+.extra-contacts-card {
+    margin-top: 1.25rem;
+}
+
 .contacts-card h2 {
     margin-bottom: 0.4rem;
 }
@@ -789,6 +793,69 @@ body {
 
 .contacts-status {
     color: var(--text-muted);
+}
+
+.extra-contacts-list {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.extra-contacts-empty {
+    padding: 0.75rem;
+    border: 1px dashed var(--grid-border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.extra-contact {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 3.75rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--grid-border);
+    border-radius: 7px;
+    background: var(--surface);
+}
+
+.extra-contact-details {
+    display: grid;
+    flex: 1;
+    min-width: 0;
+    gap: 0.15rem;
+}
+
+.extra-contact-name {
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.extra-contact-phone {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.extra-contact-delete {
+    flex: 0 0 2.5rem;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    background: var(--surface-alt);
+    color: var(--text-main);
+}
+
+.extra-contact-delete:hover:not(:disabled) {
+    background: var(--holiday-chip);
+    color: var(--text-on-accent);
+}
+
+.extra-contact-delete:disabled,
+.contacts-actions .btn-save:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
 }
 
 .rule-card {
