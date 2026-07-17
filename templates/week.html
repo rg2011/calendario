@@ -6,6 +6,7 @@
 <div class="week-tabs" role="tablist" aria-label="Vista de semana">
     <button id="weekTab" class="week-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="weekPanel">Semana</button>
     <button id="dialingTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="dialingPanel">Libreta</button>
+    <button id="extraContactsTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="extraContactsPanel">Contactos</button>
 </div>
 {% if not easy_mode %}
 <p class="easy-mode-access"><a href="{{ url_for('easy_mode') }}">Abrir modo sencillo</a></p>
@@ -39,6 +40,10 @@
             {% endfor %}
         </div>
     </section>
+
+    <section id="extraContactsPanel" class="week-tab-panel" role="tabpanel" aria-labelledby="extraContactsTab" hidden>
+        <div id="extraContactsList" class="dialing-list"></div>
+    </section>
 </div>
 {% endblock %}
 
@@ -46,9 +51,13 @@
 <script>
 const weekTab = document.getElementById('weekTab');
 const dialingTab = document.getElementById('dialingTab');
+const extraContactsTab = document.getElementById('extraContactsTab');
 const weekPanel = document.getElementById('weekPanel');
 const dialingPanel = document.getElementById('dialingPanel');
-const panels = [weekPanel, dialingPanel];
+const extraContactsPanel = document.getElementById('extraContactsPanel');
+const extraContactsList = document.getElementById('extraContactsList');
+const tabs = [weekTab, dialingTab, extraContactsTab];
+const panels = [weekPanel, dialingPanel, extraContactsPanel];
 const swipeSurface = document.querySelector('.container');
 const swipeThreshold = 60;
 const localPhoneContactsKey = 'calendario.phone-contacts.v1';
@@ -64,15 +73,11 @@ function showPanel(index) {
     });
     activePanelIndex = index;
 
-    const showWeek = index === 0;
-    weekTab.classList.toggle('is-active', showWeek);
-    dialingTab.classList.toggle('is-active', !showWeek);
-    weekTab.setAttribute('aria-selected', String(showWeek));
-    dialingTab.setAttribute('aria-selected', String(!showWeek));
-}
-
-function showWeekTab(showWeek) {
-    showPanel(showWeek ? 0 : 1);
+    tabs.forEach((tab, tabIndex) => {
+        const isActive = tabIndex === index;
+        tab.classList.toggle('is-active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+    });
 }
 
 function showTab(index, animate = false, direction = 1) {
@@ -139,81 +144,46 @@ function getExtraPhoneContacts() {
     }
 }
 
-function getInitial(name) {
-    const normalizedName = name
-        .trim()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toUpperCase();
-    const initial = Array.from(normalizedName)[0];
-    return initial && initial >= 'A' && initial <= 'Z' ? initial : '#';
-}
+function renderExtraContacts() {
+    const contacts = getExtraPhoneContacts()
+        .filter((contact) => contact && typeof contact.name === 'string' && typeof contact.tel === 'string' && contact.name.trim() && contact.tel)
+        .sort((first, second) => first.name.localeCompare(second.name, 'es'));
+    extraContactsList.replaceChildren();
 
-function addVirtualContactPanels() {
-    const contactsByInitial = new Map();
-    getExtraPhoneContacts().forEach((contact) => {
-        if (!contact || typeof contact.name !== 'string' || typeof contact.tel !== 'string' || !contact.name.trim() || !contact.tel) {
-            return;
-        }
+    if (!contacts.length) {
+        const emptyMessage = document.createElement('p');
+        emptyMessage.className = 'extra-contacts-empty';
+        emptyMessage.textContent = 'Aún no has importado contactos extra.';
+        extraContactsList.append(emptyMessage);
+        return;
+    }
 
-        const initial = getInitial(contact.name);
-        const contacts = contactsByInitial.get(initial) || [];
-        contacts.push(contact);
-        contactsByInitial.set(initial, contacts);
-    });
-
-    const initials = [...contactsByInitial.keys()].sort((first, second) => {
-        if (first === '#') return 1;
-        if (second === '#') return -1;
-        return first.localeCompare(second);
-    });
-
-    initials.forEach((initial) => {
-        const panel = document.createElement('section');
-        panel.className = 'week-tab-panel virtual-contacts-panel';
-        panel.hidden = true;
-        panel.setAttribute('role', 'region');
-        panel.setAttribute('aria-label', initial === '#' ? 'Contactos: otros' : `Contactos: ${initial}`);
-
-        const heading = document.createElement('h2');
-        heading.className = 'virtual-contacts-heading';
-        heading.textContent = initial === '#' ? 'Otros contactos' : initial;
-        const contactList = document.createElement('div');
-        contactList.className = 'dialing-list';
-
-        contactsByInitial.get(initial)
-            .sort((first, second) => first.name.localeCompare(second.name, 'es'))
-            .forEach((contact) => {
-                const contactElement = document.createElement('article');
-                contactElement.className = 'dialing-contact';
-                const shortcut = document.createElement('span');
-                shortcut.className = 'dialing-shortcut';
-                shortcut.textContent = initial;
-                const details = document.createElement('div');
-                details.className = 'virtual-contact-details';
-                const name = document.createElement('span');
-                name.className = 'dialing-name';
-                name.textContent = contact.name;
-                const phone = document.createElement('span');
-                phone.className = 'virtual-contact-phone';
-                phone.textContent = contact.tel;
-                details.append(name, phone);
-                const callButton = document.createElement('a');
-                callButton.className = 'dialing-call';
-                callButton.href = `tel:${contact.tel}`;
-                callButton.setAttribute('aria-label', `Llamar a ${contact.name}`);
-                callButton.title = 'Llamar';
-                const callIcon = document.createElement('i');
-                callIcon.className = 'fa-solid fa-phone';
-                callIcon.setAttribute('aria-hidden', 'true');
-                callButton.append(callIcon);
-                contactElement.append(shortcut, details, callButton);
-                contactList.append(contactElement);
-            });
-
-        panel.append(heading, contactList);
-        dialingPanel.parentElement.append(panel);
-        panels.push(panel);
+    contacts.forEach((contact) => {
+        const contactElement = document.createElement('article');
+        contactElement.className = 'dialing-contact';
+        const initial = document.createElement('span');
+        initial.className = 'dialing-shortcut';
+        initial.textContent = Array.from(contact.name.trim())[0].toUpperCase();
+        const details = document.createElement('div');
+        details.className = 'extra-dialing-details';
+        const name = document.createElement('span');
+        name.className = 'dialing-name';
+        name.textContent = contact.name;
+        const phone = document.createElement('span');
+        phone.className = 'extra-dialing-phone';
+        phone.textContent = contact.tel;
+        details.append(name, phone);
+        const callButton = document.createElement('a');
+        callButton.className = 'dialing-call';
+        callButton.href = `tel:${contact.tel}`;
+        callButton.setAttribute('aria-label', `Llamar a ${contact.name}`);
+        callButton.title = 'Llamar';
+        const callIcon = document.createElement('i');
+        callIcon.className = 'fa-solid fa-phone';
+        callIcon.setAttribute('aria-hidden', 'true');
+        callButton.append(callIcon);
+        contactElement.append(initial, details, callButton);
+        extraContactsList.append(contactElement);
     });
 }
 
@@ -265,10 +235,11 @@ function handleSwipeEnd(clientX, clientY) {
     showTab(activePanelIndex + (advances ? 1 : -1), true, advances ? -1 : 1);
 }
 
-weekTab.addEventListener('click', () => showWeekTab(true));
-dialingTab.addEventListener('click', () => showWeekTab(false));
+weekTab.addEventListener('click', () => showPanel(0));
+dialingTab.addEventListener('click', () => showPanel(1));
+extraContactsTab.addEventListener('click', () => showPanel(2));
 addCallButtons();
-addVirtualContactPanels();
+renderExtraContacts();
 
 swipeSurface.addEventListener('touchstart', (event) => {
     if (isInteractiveTarget(event.target)) {
