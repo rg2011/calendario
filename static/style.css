@@ -1041,6 +1041,10 @@ body {
     border-right: 0;
 }
 
+.week-tab.is-last-visible {
+    border-right: 0;
+}
+
 .week-tab.is-active {
     background: var(--accent);
     color: var(--text-on-accent);

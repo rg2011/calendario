@@ -6,7 +6,7 @@
 <div class="week-tabs" role="tablist" aria-label="Vista de semana">
     <button id="weekTab" class="week-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="weekPanel">Semana</button>
     <button id="dialingTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="dialingPanel">Libreta</button>
-    <button id="extraContactsTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="extraContactsPanel">Contactos</button>
+    <button id="extraContactsTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="extraContactsPanel" hidden>Contactos</button>
 </div>
 {% if not easy_mode %}
 <p class="easy-mode-access"><a href="{{ url_for('easy_mode') }}">Abrir modo sencillo</a></p>
@@ -149,8 +149,11 @@ function renderExtraContacts() {
         .filter((contact) => contact && typeof contact.name === 'string' && typeof contact.tel === 'string' && contact.name.trim() && contact.tel)
         .sort((first, second) => first.name.localeCompare(second.name, 'es'));
     extraContactsList.replaceChildren();
+    const hasContacts = contacts.length > 0;
+    extraContactsTab.hidden = !hasContacts;
+    dialingTab.classList.toggle('is-last-visible', !hasContacts);
 
-    if (!contacts.length) {
+    if (!hasContacts) {
         const emptyMessage = document.createElement('p');
         emptyMessage.className = 'extra-contacts-empty';
         emptyMessage.textContent = 'Aún no has importado contactos extra.';
@@ -185,6 +188,13 @@ function renderExtraContacts() {
         contactElement.append(initial, details, callButton);
         extraContactsList.append(contactElement);
     });
+}
+
+function navigablePanelIndexes() {
+    return panels
+        .map((panel, index) => ({ panel, index }))
+        .filter(({ panel }) => panel !== extraContactsPanel || !extraContactsTab.hidden)
+        .map(({ index }) => index);
 }
 
 function addCallButtons() {
@@ -230,9 +240,12 @@ function handleSwipeEnd(clientX, clientY) {
         return;
     }
 
+    const panelIndexes = navigablePanelIndexes();
+    const currentPosition = panelIndexes.indexOf(activePanelIndex);
     // De derecha a izquierda avanza: la siguiente pantalla entra por la derecha.
     const advances = deltaX < 0;
-    showTab(activePanelIndex + (advances ? 1 : -1), true, advances ? -1 : 1);
+    const nextPosition = (currentPosition + (advances ? 1 : -1) + panelIndexes.length) % panelIndexes.length;
+    showTab(panelIndexes[nextPosition], true, advances ? -1 : 1);
 }
 
 weekTab.addEventListener('click', () => showPanel(0));
