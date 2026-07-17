@@ -156,7 +156,7 @@ function getQuickPhoneContacts() {
                 return null;
             }
 
-            return { name: assignedName, tel: phoneContact.tel };
+            return { name: phoneContact.name || assignedName, tel: phoneContact.tel };
         })
         .filter(Boolean);
 }
