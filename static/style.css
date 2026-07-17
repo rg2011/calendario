@@ -1085,6 +1085,10 @@ body {
     padding: 0.5rem 0;
 }
 
+.week-tab-panel[hidden] {
+    display: none !important;
+}
+
 .week-tab-panel.is-sliding-out-right {
     animation: week-panel-out-right 220ms ease-in both;
 }
@@ -1522,7 +1526,6 @@ body {
 
     .week-tabs {
         width: calc(100% - 1.5rem);
-        margin-bottom: 0;
     }
 
     .easy-mode-container .week-tabs {
@@ -1538,7 +1541,7 @@ body {
     }
 
     .week-tab-panel {
-        padding: 0;
+        padding: 0.75rem;
     }
 
     .dialing-list {
