@@ -103,20 +103,29 @@ function showTab(index, animate = false, direction = 1) {
     nextPanel.classList.add(direction > 0 ? 'is-sliding-in-left' : 'is-sliding-in-right');
 
     let completedAnimations = 0;
-    function finishTransition() {
-        completedAnimations += 1;
-        if (completedAnimations !== 2) {
+    let transitionFinished = false;
+    let transitionTimeout;
+    function finishTransition(force = false) {
+        if (transitionFinished) {
             return;
         }
 
+        completedAnimations += force ? 2 : 1;
+        if (completedAnimations < 2) {
+            return;
+        }
+
+        transitionFinished = true;
+        window.clearTimeout(transitionTimeout);
         currentPanel.classList.remove('is-sliding-out-right', 'is-sliding-out-left');
         nextPanel.classList.remove('is-sliding-in-left', 'is-sliding-in-right');
         showPanel(normalizedIndex);
         isTabTransitioning = false;
     }
 
-    currentPanel.addEventListener('animationend', finishTransition, { once: true });
-    nextPanel.addEventListener('animationend', finishTransition, { once: true });
+    currentPanel.addEventListener('animationend', () => finishTransition(), { once: true });
+    nextPanel.addEventListener('animationend', () => finishTransition(), { once: true });
+    transitionTimeout = window.setTimeout(() => finishTransition(true), 300);
 }
 
 function resetSwipeStart() {
