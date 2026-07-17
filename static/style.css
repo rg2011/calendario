@@ -1209,12 +1209,6 @@ body {
     background: var(--call-hover);
 }
 
-.dialing-call.is-disabled {
-    background: var(--surface-alt);
-    color: var(--text-muted);
-    cursor: not-allowed;
-}
-
 .dialing-contact.is-empty .dialing-name {
     color: var(--text-muted);
     font-weight: 400;

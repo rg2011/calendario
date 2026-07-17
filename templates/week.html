@@ -144,6 +144,21 @@ function getExtraPhoneContacts() {
     }
 }
 
+function getQuickPhoneContacts() {
+    const localContacts = getLocalPhoneContacts();
+    return [...document.querySelectorAll('#dialingPanel .dialing-contact')]
+        .map((contactElement) => {
+            const phoneContact = localContacts[contactElement.dataset.shortcut];
+            const assignedName = contactElement.dataset.assignedName;
+            if (!phoneContact || phoneContact.assignedName !== assignedName || !phoneContact.tel || !assignedName) {
+                return null;
+            }
+
+            return { name: assignedName, tel: phoneContact.tel };
+        })
+        .filter(Boolean);
+}
+
 function getContactInitial(name) {
     const normalizedName = name
         .trim()
@@ -164,7 +179,7 @@ function formatPhoneNumber(phone) {
 }
 
 function renderExtraContacts() {
-    const contacts = getExtraPhoneContacts()
+    const contacts = [...getQuickPhoneContacts(), ...getExtraPhoneContacts()]
         .filter((contact) => contact && typeof contact.name === 'string' && typeof contact.tel === 'string' && contact.name.trim() && contact.tel)
         .sort((first, second) => first.name.localeCompare(second.name, 'es'));
     extraContactsList.replaceChildren();
@@ -240,36 +255,6 @@ function navigablePanelIndexes() {
         .map(({ index }) => index);
 }
 
-function addCallButtons() {
-    const localContacts = getLocalPhoneContacts();
-    document.querySelectorAll('.dialing-contact').forEach((contactElement) => {
-        const phoneContact = localContacts[contactElement.dataset.shortcut];
-        const canCall = Boolean(
-            phoneContact
-            && phoneContact.assignedName === contactElement.dataset.assignedName
-            && phoneContact.tel
-        );
-
-        const callButton = document.createElement(canCall ? 'a' : 'span');
-        callButton.className = `dialing-call${canCall ? '' : ' is-disabled'}`;
-        callButton.setAttribute(
-            'aria-label',
-            canCall ? `Llamar a ${phoneContact.name || phoneContact.assignedName}` : 'No hay teléfono asociado'
-        );
-        callButton.title = canCall ? 'Llamar' : 'No hay teléfono asociado';
-        if (canCall) {
-            callButton.href = `tel:${phoneContact.tel}`;
-        } else {
-            callButton.setAttribute('aria-disabled', 'true');
-        }
-        const callIcon = document.createElement('i');
-        callIcon.className = 'fa-solid fa-phone';
-        callIcon.setAttribute('aria-hidden', 'true');
-        callButton.append(callIcon);
-        contactElement.append(callButton);
-    });
-}
-
 function handleSwipeEnd(clientX, clientY) {
     if (swipeStartX === null || swipeStartY === null) {
         return;
@@ -294,7 +279,6 @@ function handleSwipeEnd(clientX, clientY) {
 weekTab.addEventListener('click', () => showPanel(0));
 dialingTab.addEventListener('click', () => showPanel(1));
 extraContactsTab.addEventListener('click', () => showPanel(2));
-addCallButtons();
 renderExtraContacts();
 
 swipeSurface.addEventListener('touchstart', (event) => {
