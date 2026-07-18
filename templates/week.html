@@ -17,12 +17,20 @@
         <div class="week-container">
             <div class="week-layout">
                 {% for day in days %}
+                {% set note_text = (day.note or '')|trim %}
                 <article class="week-day"
                     data-person="{{ day.person }}"
                     data-date="{{ day.date }}">
                     <time class="week-day-date" datetime="{{ day.date.isoformat() }}">{{ day.label }}</time>
                     <div class="week-day-person">
-                        {% if loop.index0 == 0 %}<span class="week-day-context">Hoy ·&nbsp;</span>{% elif loop.index0 == 1 %}<span class="week-day-context">Mañana ·&nbsp;</span>{% endif %}<strong class="week-day-name">{{ day.person }}</strong>
+                        <span class="week-day-person-text">
+                            {% if loop.index0 == 0 %}<span class="week-day-context">Hoy ·&nbsp;</span>{% elif loop.index0 == 1 %}<span class="week-day-context">Mañana ·&nbsp;</span>{% endif %}<strong class="week-day-name">{{ day.person }}</strong>
+                        </span>
+                        {% if can_write and note_text %}
+                        <button class="week-note-button" type="button" data-note="{{ note_text }}" data-note-date="{{ day.label }}" aria-label="Ver nota de {{ day.label }}" title="Ver nota">
+                            <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
+                        </button>
+                        {% endif %}
                     </div>
                 </article>
                 {% endfor %}
@@ -47,6 +55,20 @@
         <div id="extraContactsList" class="dialing-list"></div>
     </section>
 </div>
+
+<div id="weekNoteModal" class="shift-modal week-note-modal" role="dialog" aria-modal="true" aria-labelledby="weekNoteModalTitle">
+    <div class="shift-modal-content week-note-modal-content" tabindex="-1">
+        <div class="shift-modal-header">
+            <div>
+                <h3 id="weekNoteModalTitle">Nota</h3>
+                <p id="weekNoteModalDate" class="shift-modal-date"></p>
+            </div>
+        </div>
+        <div class="shift-modal-body">
+            <p id="weekNoteModalText" class="week-note-modal-text"></p>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -58,6 +80,11 @@ const weekPanel = document.getElementById('weekPanel');
 const dialingPanel = document.getElementById('dialingPanel');
 const extraContactsPanel = document.getElementById('extraContactsPanel');
 const extraContactsList = document.getElementById('extraContactsList');
+const weekNoteModal = document.getElementById('weekNoteModal');
+const weekNoteModalContent = weekNoteModal.querySelector('.week-note-modal-content');
+const weekNoteModalDate = document.getElementById('weekNoteModalDate');
+const weekNoteModalText = document.getElementById('weekNoteModalText');
+const weekNoteButtons = [...document.querySelectorAll('.week-note-button')];
 const tabs = [weekTab, dialingTab, extraContactsTab];
 const panels = [weekPanel, dialingPanel, extraContactsPanel];
 const swipeSurface = document.querySelector('.container');
@@ -126,6 +153,19 @@ function resetSwipeStart() {
 
 function isInteractiveTarget(target) {
     return Boolean(target && target.closest('a, button, input, select, textarea'));
+}
+
+function openWeekNoteModal(note, dateLabel) {
+    weekNoteModalDate.textContent = dateLabel || '';
+    weekNoteModalText.textContent = note || '';
+    weekNoteModal.style.display = 'flex';
+    weekNoteModalContent.focus({ preventScroll: true });
+}
+
+function closeWeekNoteModal() {
+    weekNoteModal.style.display = 'none';
+    weekNoteModalDate.textContent = '';
+    weekNoteModalText.textContent = '';
 }
 
 function getLocalPhoneContacts() {
@@ -281,6 +321,10 @@ function handleSwipeEnd(clientX, clientY) {
 weekTab.addEventListener('click', () => showPanel(0));
 dialingTab.addEventListener('click', () => showPanel(1));
 extraContactsTab.addEventListener('click', () => showPanel(2));
+weekNoteButtons.forEach((button) => {
+    button.addEventListener('click', () => openWeekNoteModal(button.dataset.note, button.dataset.noteDate));
+});
+weekNoteModal.addEventListener('click', closeWeekNoteModal);
 renderExtraContacts();
 
 swipeSurface.addEventListener('touchstart', (event) => {
@@ -308,5 +352,11 @@ document.addEventListener('touchend', (event) => {
 }, { passive: true });
 
 document.addEventListener('touchcancel', resetSwipeStart, { passive: true });
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && weekNoteModal.style.display === 'flex') {
+        closeWeekNoteModal();
+    }
+});
 </script>
 {% endblock %}

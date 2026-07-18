@@ -339,23 +339,27 @@ def settings(secret):
 @app.route("/<secret>/week")
 @app_state.cached_view(lambda secret: access_cache_key(week_cache_key()), ("data",))
 def week(secret):
+    can_write = current_access_mode() == READ_WRITE
     context = calendar_service.build_week_context(
         date.today(),
-        include_notes=current_access_mode() != READ_ONLY,
+        include_notes=can_write,
     )
     context["contacts"] = contact_service.contacts_by_shortcut()
+    context["can_write"] = can_write
     return render_template("week.html", **context)
 
 
 @app.route("/<secret>/easy")
 @app_state.cached_view(lambda secret: access_cache_key(f"easy:{week_cache_key()}"), ("data",))
 def easy_mode(secret):
+    can_write = current_access_mode() == READ_WRITE
     context = calendar_service.build_week_context(
         date.today(),
-        include_notes=current_access_mode() != READ_ONLY,
+        include_notes=can_write,
     )
     context["contacts"] = contact_service.contacts_by_shortcut()
     context["easy_mode"] = True
+    context["can_write"] = can_write
     return render_template("week.html", **context)
 
 

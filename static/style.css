@@ -29,6 +29,8 @@
     --call-bg: #2f8b57;
     --call-hover: #246f45;
     --call-text: #ffffff;
+    --note-icon: #ffd200;
+    --note-icon-hover: #ffe066;
     --easy-tab-active-bg: #26394b;
     --easy-tab-active-text: #ffffff;
 
@@ -1273,10 +1275,21 @@ body {
     display: flex;
     align-items: center;
     flex: 1;
+    gap: 0.65rem;
+    min-width: 0;
     margin-top: 0.65rem;
     font-size: 1.3rem;
     font-weight: 700;
     color: var(--text-main);
+}
+
+.week-day-person-text {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .week-day-context {
@@ -1285,6 +1298,49 @@ body {
 
 .week-day-name {
     font-weight: 700;
+}
+
+.week-note-button {
+    display: grid;
+    flex: 0 0 2.25rem;
+    place-items: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: var(--accent);
+    color: var(--note-icon);
+    font-size: 0.95rem;
+    cursor: pointer;
+}
+
+.week-note-button:hover {
+    background: var(--accent-hover);
+    color: var(--note-icon-hover);
+}
+
+.week-note-button:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
+.week-note-modal {
+    align-items: center;
+    justify-content: center;
+}
+
+.week-note-modal-content {
+    width: min(90vw, 380px);
+    max-width: 380px;
+    margin: auto;
+}
+
+.week-note-modal-text {
+    color: var(--text-main);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
 }
 
 .week-day[data-person="Juanmi"] .week-day-person {
@@ -1562,8 +1618,16 @@ body {
     }
 
     .week-day-person {
+        gap: 0.5rem;
         margin-top: 0.25rem;
         font-size: 1.15rem;
+    }
+
+    .week-note-button {
+        flex-basis: 2rem;
+        width: 2rem;
+        height: 2rem;
+        font-size: 0.85rem;
     }
 }
 
@@ -1693,6 +1757,8 @@ body {
         --call-bg: #61c487;
         --call-hover: #78d29a;
         --call-text: #102018;
+        --note-icon: #ffd84a;
+        --note-icon-hover: #ffe680;
         --easy-tab-active-bg: #e1e9ee;
         --easy-tab-active-text: #17232d;
 
