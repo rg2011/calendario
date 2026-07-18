@@ -58,7 +58,7 @@ class ShiftService:
         self,
         shift_date: date,
         absent_people: list[str] | None = None,
-    ) -> tuple[str | None, bool, str | None, str | None]:
+    ) -> tuple[str | None, bool, str | None, str | None, list[str]]:
         """Obtiene el turno efectivo de un día, aplicando ausencias y custom shift."""
         default_person = self.get_default_shift_for_day(shift_date)
         if self._absence_service.is_person_absent_on_date(
@@ -69,9 +69,10 @@ class ShiftService:
         custom = CustomShift.query.filter_by(shift_date=shift_date).first()
         if custom:
             effective_person = custom.person if custom.person else default_person
-            return effective_person, True, custom.note, custom.person
+            tags = custom.tags if isinstance(custom.tags, list) else []
+            return effective_person, True, custom.note, custom.person, tags
 
-        return default_person, False, None, None
+        return default_person, False, None, None, []
 
     def get_shift_summary_for_date(self, shift_date: date) -> dict[str, Any]:
         """Resume el estado de turno para una fecha concreta."""
@@ -84,7 +85,9 @@ class ShiftService:
             default_person, shift_date, absent_people
         ):
             default_person = None
-        person, is_custom, note, custom_person = self.get_shift_for_day(shift_date, absent_people)
+        person, is_custom, note, custom_person, tags = self.get_shift_for_day(
+            shift_date, absent_people
+        )
         return {
             "date": shift_date,
             "date_iso": shift_date.isoformat(),
@@ -93,6 +96,7 @@ class ShiftService:
             "custom_person": custom_person,
             "is_custom": is_custom,
             "note": note,
+            "tags": tags,
             "absent_people": absent_people,
         }
 
@@ -139,9 +143,12 @@ class ShiftService:
         raw_person = self._as_string(data.get("person")) or ""
         person = raw_person or None
         note = self._as_string(data.get("note"))
+        tags, tags_error = self._parse_tags(data)
 
         if not shift_date_str:
             return {"success": False, "error": "Invalid data"}, 400
+        if tags_error:
+            return {"success": False, "error": tags_error}, 400
 
         shift_date = datetime.fromisoformat(shift_date_str).date()
         should_delete = raw_person == "clear"
@@ -154,8 +161,10 @@ class ShiftService:
             return {"success": False, "error": "La persona está ausente en esa fecha"}, 400
 
         custom = CustomShift.query.filter_by(shift_date=shift_date).first()
+        if tags is None:
+            tags = custom.tags if custom and isinstance(custom.tags, list) else []
 
-        should_delete = should_delete or (not person and not note)
+        should_delete = should_delete or (not person and not note and not tags)
         if should_delete:
             if custom:
                 db.session.delete(custom)
@@ -167,6 +176,7 @@ class ShiftService:
                 custom.shift_date = shift_date
             custom.person = person
             custom.note = note
+            custom.tags = tags
             db.session.add(custom)
             db.session.commit()
             self._cache_state.touch_data()
@@ -178,6 +188,22 @@ class ShiftService:
             stripped = value.strip()
             return stripped or None
         return None
+
+    def _parse_tags(self, data: dict[str, Any]) -> tuple[list[str] | None, str | None]:
+        """Normaliza los tags recibidos; omitirlos conserva los ya guardados."""
+        if "tags" not in data:
+            return None, None
+
+        raw_tags = data["tags"]
+        if not isinstance(raw_tags, list) or not all(isinstance(tag, str) for tag in raw_tags):
+            return None, "Los tags deben ser una lista de textos"
+
+        tags: list[str] = []
+        for raw_tag in raw_tags:
+            tag = raw_tag.strip()
+            if tag and tag not in tags:
+                tags.append(tag)
+        return tags, None
 
 
 def New(

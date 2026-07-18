@@ -5,7 +5,7 @@ from src.models import db
 
 
 def ensure_custom_shift_schema(logger: Logger, cache_state: CacheState) -> None:
-    """Asegura que `custom_shifts` tenga `note` y permita `person = NULL`."""
+    """Asegura las columnas actuales de `custom_shifts`."""
     inspector = db.inspect(db.engine)
     if "custom_shifts" not in inspector.get_table_names():
         return
@@ -14,9 +14,19 @@ def ensure_custom_shift_schema(logger: Logger, cache_state: CacheState) -> None:
     column_names = {column["name"] for column in columns}
     person_column = next((column for column in columns if column["name"] == "person"), None)
     note_exists = "note" in column_names
+    tags_exists = "tags" in column_names
     person_allows_null = bool(person_column and person_column.get("nullable", False))
 
+    if note_exists and person_allows_null and tags_exists:
+        return
+
     if note_exists and person_allows_null:
+        with db.engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE custom_shifts ADD COLUMN tags JSON NOT NULL DEFAULT '[]'"
+            )
+        cache_state.touch_data()
+        logger.info("Esquema actualizado: custom_shifts.tags está disponible")
         return
 
     with db.engine.begin() as connection:
@@ -27,12 +37,22 @@ def ensure_custom_shift_schema(logger: Logger, cache_state: CacheState) -> None:
                 shift_date DATE NOT NULL UNIQUE,
                 person VARCHAR(50),
                 note TEXT,
+                tags JSON NOT NULL DEFAULT '[]',
                 created_at DATETIME,
                 updated_at DATETIME
             )
             """
         )
-        if note_exists:
+        if note_exists and tags_exists:
+            connection.exec_driver_sql(
+                """
+                INSERT INTO custom_shifts_new
+                    (id, shift_date, person, note, tags, created_at, updated_at)
+                SELECT id, shift_date, person, note, COALESCE(tags, '[]'), created_at, updated_at
+                FROM custom_shifts
+                """
+            )
+        elif note_exists:
             connection.exec_driver_sql(
                 """
                 INSERT INTO custom_shifts_new (id, shift_date, person, note, created_at, updated_at)
@@ -52,7 +72,7 @@ def ensure_custom_shift_schema(logger: Logger, cache_state: CacheState) -> None:
         connection.exec_driver_sql("ALTER TABLE custom_shifts_new RENAME TO custom_shifts")
     cache_state.touch_data()
     logger.info(
-        "Esquema actualizado: custom_shifts.person ahora permite NULL y note está disponible"
+        "Esquema actualizado: custom_shifts.person permite NULL, note y tags están disponibles"
     )
 
 

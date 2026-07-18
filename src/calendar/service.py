@@ -117,7 +117,7 @@ class CalendarService:
                 default_person, day["date"], absent_people
             ):
                 default_person = None
-            person, is_custom, note, custom_person = self._shift_service.get_shift_for_day(
+            person, is_custom, note, custom_person, tags = self._shift_service.get_shift_for_day(
                 day["date"],
                 absent_people,
             )
@@ -127,6 +127,7 @@ class CalendarService:
             day["custom_person"] = custom_person
             day["is_custom"] = is_custom
             day["note"] = note if include_notes else None
+            day["tags"] = tags
             day["absent_people"] = absent_people
             day["is_today"] = day["date"] == today
             day["holiday_name"] = " · ".join(holiday_info["names"]) if holiday_info else None
@@ -173,7 +174,7 @@ class CalendarService:
                 default_person, day["date"], absent_people
             ):
                 default_person = None
-            person, is_custom, note, custom_person = self._shift_service.get_shift_for_day(
+            person, is_custom, note, custom_person, tags = self._shift_service.get_shift_for_day(
                 day["date"],
                 absent_people,
             )
@@ -187,6 +188,7 @@ class CalendarService:
             day["custom_person"] = custom_person
             day["is_custom"] = is_custom
             day["note"] = note if include_notes else None
+            day["tags"] = tags
             day["absent_people"] = absent_people
             day["is_today"] = day["date"] == start
 

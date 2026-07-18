@@ -32,6 +32,13 @@
                         </button>
                         {% endif %}
                     </div>
+                    {% if day.tags %}
+                    <div class="week-day-tags" aria-label="Tags: {{ day.tags|join(', ') }}">
+                        {% for tag in day.tags %}
+                        <span class="week-day-tag">{{ tag }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                 </article>
                 {% endfor %}
             </div>

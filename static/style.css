@@ -571,6 +571,75 @@ body {
     color: var(--text-muted);
 }
 
+.shift-tag-editor {
+    display: flex;
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.shift-tags {
+    display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    width: 100%;
+}
+
+.shift-tags:empty {
+    display: none;
+}
+
+.shift-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.45rem 0.3rem 0.6rem;
+    border-radius: 999px;
+    background-color: var(--surface-muted);
+    border: 1px solid var(--grid-border);
+    font-size: 0.86rem;
+}
+
+.shift-tag-remove {
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0;
+}
+
+.shift-tag-add {
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.shift-tag-input {
+    min-width: 0;
+    flex: 1;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--field-border);
+    border-radius: 6px;
+    background-color: var(--field-bg);
+    color: var(--text-main);
+    font: inherit;
+}
+
+.shift-tag-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.shift-tag-add .shift-option {
+    padding: 0.65rem 0.75rem;
+}
+
 .holiday-modal-name {
     font-size: 1.05rem;
     line-height: 1.4;
@@ -1299,6 +1368,26 @@ body {
 
 .week-day-name {
     font-weight: 700;
+}
+
+.week-day-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.7rem;
+}
+
+.week-day-tag {
+    max-width: 100%;
+    padding: 0.2rem 0.5rem;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--grid-border);
+    border-radius: 999px;
+    background: var(--surface-muted);
+    color: var(--text-main);
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.25;
 }
 
 .week-note-button {

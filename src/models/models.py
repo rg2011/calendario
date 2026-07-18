@@ -32,6 +32,7 @@ class CustomShift(db.Model):
     shift_date = db.Column(db.Date, nullable=False, unique=True)
     person = db.Column(db.String(50))
     note = db.Column(db.Text)
+    tags = db.Column(db.JSON, nullable=False, default=list)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

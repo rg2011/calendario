@@ -71,6 +71,7 @@
                              data-default-person="{{ day.default_person or '' }}"
                              data-is-custom="{{ 'true' if day.is_custom else 'false' }}"
                              data-note="{{ day.note or '' }}"
+                             data-tags='{{ day.tags|tojson }}'
                              data-absent-people='{{ day.absent_people|tojson }}'>
                             <span class="person-name person-name-full">{{ day.person or 'Vacío' }}</span>
                             <span class="person-name person-name-short">
@@ -109,9 +110,17 @@
                 <button class="shift-option person-juanmi" data-person="Juanmi">Juanmi</button>
                 <button class="shift-option person-rafa" data-person="Rafa">Rafa</button>
                 <button class="shift-option person-ana" data-person="Ana">Ana</button>
+                <label class="shift-note-field" for="shiftTagInput">Tags</label>
+                <div class="shift-tag-editor">
+                    <div class="shift-tag-add">
+                        <input id="shiftTagInput" class="shift-tag-input" type="text" placeholder="Añade un tag">
+                        <button id="shiftTagAdd" class="shift-option" type="button">Añadir</button>
+                    </div>
+                    <div id="shiftTags" class="shift-tags" aria-live="polite"></div>
+                </div>
                 <label class="shift-note-field" for="shiftNote">Anotación</label>
                 <textarea id="shiftNote" class="shift-note-input" rows="4" placeholder="Añade una anotación para este día personalizado"></textarea>
-                <button id="shiftOptionSaveNote" class="shift-option shift-option-clear" type="button">Guardar nota</button>
+                <button id="shiftOptionSave" class="shift-option shift-option-clear" type="button">Guardar cambios</button>
                 <button id="shiftOptionDelete" class="shift-option shift-option-clear" data-person="clear">Eliminar personalización</button>
             </div>
         </div>
@@ -139,6 +148,7 @@ let currentPerson = null;
 let currentEffectivePerson = null;
 let defaultPerson = null;
 let currentNote = '';
+let currentTags = [];
 let currentAbsentPeople = [];
 let currentIsCustom = false;
 const customShiftApiUrl = {{ url_for('set_custom_shift')|tojson }};
@@ -146,9 +156,12 @@ const modal = document.getElementById('shiftModal');
 const modalDateLabel = document.getElementById('shiftModalDate');
 const modalHintLabel = document.getElementById('shiftModalHint');
 const modalCloseButton = document.getElementById('shiftModalClose');
-const saveNoteButton = document.getElementById('shiftOptionSaveNote');
+const saveButton = document.getElementById('shiftOptionSave');
 const deleteOptionButton = document.getElementById('shiftOptionDelete');
 const shiftNoteInput = document.getElementById('shiftNote');
+const shiftTags = document.getElementById('shiftTags');
+const shiftTagInput = document.getElementById('shiftTagInput');
+const shiftTagAddButton = document.getElementById('shiftTagAdd');
 const holidayModal = document.getElementById('holidayModal');
 const holidayModalDateLabel = document.getElementById('holidayModalDate');
 const holidayModalName = document.getElementById('holidayModalName');
@@ -217,17 +230,51 @@ function updateShiftModalSelection() {
     modalHintLabel.textContent = `Editado. Valor por defecto: ${defaultPerson || 'Vacío'}`;
 }
 
-function openShiftSelector(date, person, effectivePerson, defaultValue, note, absentPeople, isCustom) {
+function renderTags() {
+    shiftTags.replaceChildren();
+    currentTags.forEach((tag) => {
+        const tagElement = document.createElement('span');
+        tagElement.className = 'shift-tag';
+        tagElement.textContent = tag;
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'shift-tag-remove';
+        removeButton.textContent = '×';
+        removeButton.setAttribute('aria-label', `Eliminar tag ${tag}`);
+        removeButton.addEventListener('click', () => {
+            currentTags = currentTags.filter((currentTag) => currentTag !== tag);
+            renderTags();
+        });
+        tagElement.appendChild(removeButton);
+        shiftTags.appendChild(tagElement);
+    });
+}
+
+function addTag() {
+    const tag = shiftTagInput.value.trim();
+    if (!tag || currentTags.includes(tag)) {
+        return;
+    }
+    currentTags.push(tag);
+    shiftTagInput.value = '';
+    renderTags();
+}
+
+function openShiftSelector(date, person, effectivePerson, defaultValue, note, tags, absentPeople, isCustom) {
     currentDate = date;
     currentPerson = person || null;
     currentEffectivePerson = effectivePerson || null;
     defaultPerson = defaultValue || null;
     currentNote = note || '';
+    currentTags = Array.isArray(tags) ? tags : [];
     currentAbsentPeople = Array.isArray(absentPeople) ? absentPeople : [];
     currentIsCustom = isCustom;
     modal.style.display = 'block';
     modalDateLabel.textContent = formatDateLabel(date);
     shiftNoteInput.value = currentNote;
+    shiftTagInput.value = '';
+    renderTags();
     updateShiftModalSelection();
 }
 
@@ -236,11 +283,13 @@ function closeShiftSelector() {
     modalDateLabel.textContent = '';
     modalHintLabel.textContent = '';
     shiftNoteInput.value = '';
+    shiftTagInput.value = '';
     currentDate = null;
     currentPerson = null;
     currentEffectivePerson = null;
     defaultPerson = null;
     currentNote = '';
+    currentTags = [];
     currentAbsentPeople = [];
     currentIsCustom = false;
 }
@@ -285,13 +334,15 @@ function saveShiftSelection(person) {
     saveCustomShift({
         person: person,
         note: shiftNoteInput.value,
+        tags: currentTags,
     });
 }
 
-function saveShiftNote() {
+function saveShiftChanges() {
     saveCustomShift({
         person: currentPerson || '',
         note: shiftNoteInput.value,
+        tags: currentTags,
     });
 }
 
@@ -367,6 +418,7 @@ document.querySelectorAll('.calendar-day').forEach((calendarDay) => {
             dayPerson.dataset.effectivePerson,
             dayPerson.dataset.defaultPerson,
             dayPerson.dataset.note,
+            JSON.parse(dayPerson.dataset.tags || '[]'),
             JSON.parse(dayPerson.dataset.absentPeople || '[]'),
             dayPerson.dataset.isCustom === 'true'
         );
@@ -386,7 +438,14 @@ document.querySelectorAll('.shift-option[data-person]').forEach((button) => {
         saveShiftSelection(this.dataset.person);
     });
 });
-saveNoteButton.addEventListener('click', saveShiftNote);
+saveButton.addEventListener('click', saveShiftChanges);
+shiftTagAddButton.addEventListener('click', addTag);
+shiftTagInput.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        addTag();
+    }
+});
 
 monthSelect.addEventListener('change', navigateToSelectedMonthYear);
 yearSelect.addEventListener('change', navigateToSelectedMonthYear);
