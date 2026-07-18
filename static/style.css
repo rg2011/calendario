@@ -337,6 +337,7 @@ body {
     border: 1px solid var(--grid-border);
     background-color: var(--day-bg-current);
     color: var(--text-main);
+    cursor: pointer;
 }
 
 .calendar-day.other-month {

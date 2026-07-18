@@ -180,7 +180,7 @@ class CalendarService:
             day["label"] = "%s, %d de %s" % (
                 DAYS_OF_WEEK_ABBR[day["date"].weekday()],
                 day["date"].day,
-                MONTH_NAMES_ES[day["date"].month-1],
+                MONTH_NAMES_ES[day["date"].month],
             )
             day["person"] = person
             day["default_person"] = default_person

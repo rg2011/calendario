@@ -111,7 +111,7 @@
                 <button class="shift-option person-ana" data-person="Ana">Ana</button>
                 <label class="shift-note-field" for="shiftNote">Anotación</label>
                 <textarea id="shiftNote" class="shift-note-input" rows="4" placeholder="Añade una anotación para este día personalizado"></textarea>
-                <button id="shiftOptionClear" class="shift-option shift-option-clear" data-person="">Guardar con valor por defecto</button>
+                <button id="shiftOptionSaveNote" class="shift-option shift-option-clear" type="button">Guardar nota</button>
                 <button id="shiftOptionDelete" class="shift-option shift-option-clear" data-person="clear">Eliminar personalización</button>
             </div>
         </div>
@@ -146,7 +146,7 @@ const modal = document.getElementById('shiftModal');
 const modalDateLabel = document.getElementById('shiftModalDate');
 const modalHintLabel = document.getElementById('shiftModalHint');
 const modalCloseButton = document.getElementById('shiftModalClose');
-const clearOptionButton = document.getElementById('shiftOptionClear');
+const saveNoteButton = document.getElementById('shiftOptionSaveNote');
 const deleteOptionButton = document.getElementById('shiftOptionDelete');
 const shiftNoteInput = document.getElementById('shiftNote');
 const holidayModal = document.getElementById('holidayModal');
@@ -177,9 +177,14 @@ function formatDateLabel(dateString) {
 }
 
 function updateShiftModalSelection() {
-    document.querySelectorAll('.shift-option').forEach((button) => {
-        const isSelected = button.dataset.person === currentPerson;
-        const isUnavailable = currentAbsentPeople.includes(button.dataset.person);
+    document.querySelectorAll('.shift-option[data-person]').forEach((button) => {
+        const buttonPerson = button.dataset.person;
+        const isPersonButton = buttonPerson && buttonPerson !== 'clear';
+        const isSelected = buttonPerson === currentPerson;
+        const isUnavailable = isPersonButton && currentAbsentPeople.includes(buttonPerson);
+        if (isPersonButton) {
+            button.textContent = buttonPerson === defaultPerson ? `${buttonPerson} (*)` : buttonPerson;
+        }
         button.classList.toggle('is-selected', isSelected);
         button.disabled = isUnavailable;
         button.classList.toggle('is-disabled', isUnavailable);
@@ -190,9 +195,6 @@ function updateShiftModalSelection() {
         }
     });
 
-    clearOptionButton.textContent = defaultPerson
-        ? `Guardar con valor por defecto: ${defaultPerson}`
-        : 'Guardar con valor por defecto: Sin regla';
     deleteOptionButton.style.display = currentIsCustom ? 'block' : 'none';
 
     if (!currentIsCustom) {
@@ -255,7 +257,7 @@ function closeHolidayModal() {
     holidayModalName.textContent = '';
 }
 
-function saveShiftSelection(person) {
+function saveCustomShift(payload) {
     if (!currentDate) return;
 
     fetch(customShiftApiUrl, {
@@ -263,11 +265,9 @@ function saveShiftSelection(person) {
         headers: {
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
+        body: JSON.stringify(Object.assign({
             shift_date: currentDate,
-            person: person,
-            note: shiftNoteInput.value
-        })
+        }, payload))
     })
     .then(response => response.json())
     .then(data => {
@@ -279,6 +279,20 @@ function saveShiftSelection(person) {
         alert(data.error || 'Error al guardar el turno');
     })
     .catch(error => console.error('Error:', error));
+}
+
+function saveShiftSelection(person) {
+    saveCustomShift({
+        person: person,
+        note: shiftNoteInput.value,
+    });
+}
+
+function saveShiftNote() {
+    saveCustomShift({
+        person: currentPerson || '',
+        note: shiftNoteInput.value,
+    });
 }
 
 function navigateMonth(url) {
@@ -344,10 +358,6 @@ function handleSwipeEnd(clientX, clientY) {
 
 document.querySelectorAll('.calendar-day').forEach((calendarDay) => {
     calendarDay.addEventListener('click', function(event) {
-        if (event.target.closest('.day-number')) {
-            return;
-        }
-
         event.preventDefault();
         event.stopPropagation();
         const dayPerson = this.querySelector('.day-person');
@@ -371,11 +381,12 @@ document.querySelectorAll('.holiday-trigger').forEach((trigger) => {
     });
 });
 
-document.querySelectorAll('.shift-option').forEach((button) => {
+document.querySelectorAll('.shift-option[data-person]').forEach((button) => {
     button.addEventListener('click', function() {
         saveShiftSelection(this.dataset.person);
     });
 });
+saveNoteButton.addEventListener('click', saveShiftNote);
 
 monthSelect.addEventListener('change', navigateToSelectedMonthYear);
 yearSelect.addEventListener('change', navigateToSelectedMonthYear);
