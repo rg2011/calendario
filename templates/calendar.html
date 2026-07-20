@@ -339,6 +339,7 @@ function saveShiftSelection(person) {
 }
 
 function saveShiftChanges() {
+    addTag();
     saveCustomShift({
         person: currentPerson || '',
         note: shiftNoteInput.value,

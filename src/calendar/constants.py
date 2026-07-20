@@ -14,3 +14,4 @@ MONTH_NAMES_ES = {
 }
 
 DAYS_OF_WEEK_ABBR = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+DAYS_OF_WEEK = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]

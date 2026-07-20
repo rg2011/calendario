@@ -18,26 +18,28 @@
             <div class="week-layout">
                 {% for day in days %}
                 {% set note_text = (day.note or '')|trim %}
-                <article class="week-day"
+                <article class="week-day{% if can_write and note_text %} has-note{% endif %}"
                     data-person="{{ day.person }}"
                     data-date="{{ day.date }}">
-                    <time class="week-day-date" datetime="{{ day.date.isoformat() }}">{{ day.label }}</time>
-                    <div class="week-day-person">
-                        <span class="week-day-person-text">
-                            {% if loop.index0 == 0 %}<span class="week-day-context">Hoy ·&nbsp;</span>{% elif loop.index0 == 1 %}<span class="week-day-context">Mañana ·&nbsp;</span>{% endif %}<strong class="week-day-name">{{ day.person }}</strong>
-                        </span>
-                        {% if can_write and note_text %}
-                        <button class="week-note-button" type="button" data-note="{{ note_text }}" data-note-date="{{ day.label }}" aria-label="Ver nota de {{ day.label }}" title="Ver nota">
-                            <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
-                        </button>
+                    <div class="week-day-content">
+                        <time class="week-day-date" datetime="{{ day.date.isoformat() }}">{{ day.label }}</time>
+                        <div class="week-day-person">
+                            <span class="week-day-person-text">
+                                {% if loop.index0 == 0 %}<span class="week-day-context">Hoy {{ day.weekday }}&nbsp;–&nbsp;</span>{% elif loop.index0 == 1 %}<span class="week-day-context">Mañana {{ day.weekday }}&nbsp;–&nbsp;</span>{% else %}<span class="week-day-context">{{ day.weekday }}&nbsp;–&nbsp;</span>{% endif %}<strong class="week-day-name">{{ day.person }}</strong>
+                            </span>
+                        </div>
+                        {% if day.tags %}
+                        <div class="week-day-tags" aria-label="Tags: {{ day.tags|join(', ') }}">
+                            {% for tag in day.tags %}
+                            <span class="week-day-tag">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
                         {% endif %}
                     </div>
-                    {% if day.tags %}
-                    <div class="week-day-tags" aria-label="Tags: {{ day.tags|join(', ') }}">
-                        {% for tag in day.tags %}
-                        <span class="week-day-tag">{{ tag }}</span>
-                        {% endfor %}
-                    </div>
+                    {% if can_write and note_text %}
+                    <button class="week-note-button" type="button" data-note="{{ note_text }}" data-note-date="{{ day.label }}" aria-label="Ver nota de {{ day.label }}" title="Ver nota">
+                        <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
+                    </button>
                     {% endif %}
                 </article>
                 {% endfor %}

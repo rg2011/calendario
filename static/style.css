@@ -1302,16 +1302,27 @@ body {
 }
 
 .week-day {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     min-height: 6rem;
-    padding: 0.8rem 1rem;
+    padding: 0;
     overflow: hidden;
     background: var(--surface);
     border: 1px solid var(--grid-border);
     border-radius: 8px;
     box-shadow: 0 3px 10px rgba(36, 48, 59, 0.05);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.week-day.has-note {
+    grid-template-columns: minmax(0, 1fr) 2.5rem;
+}
+
+.week-day-content {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 0.8rem 1rem;
 }
 
 .week-day[data-person="Juanmi"] {
@@ -1392,16 +1403,14 @@ body {
 
 .week-note-button {
     display: grid;
-    flex: 0 0 2.25rem;
     place-items: center;
-    width: 2.25rem;
-    height: 2.25rem;
+    grid-column: 2;
     padding: 0;
     border: 0;
-    border-radius: 5px;
+    border-radius: 0 7px 7px 0;
     background: var(--accent);
     color: var(--note-icon);
-    font-size: 0.95rem;
+    font-size: 1.1rem;
     cursor: pointer;
 }
 
@@ -1700,6 +1709,13 @@ body {
 
     .week-day {
         min-height: 4.75rem;
+    }
+
+    .week-day.has-note {
+        grid-template-columns: minmax(0, 1fr) 2.25rem;
+    }
+
+    .week-day-content {
         padding: 0.7rem 0.9rem;
     }
 
@@ -1714,10 +1730,7 @@ body {
     }
 
     .week-note-button {
-        flex-basis: 2rem;
-        width: 2rem;
-        height: 2rem;
-        font-size: 0.85rem;
+        font-size: 1rem;
     }
 }
 

@@ -8,7 +8,7 @@ from src.absences.service import AbsenceService
 from src.holidays import HolidayProvider
 from src.shifts.service import ShiftService
 
-from .constants import DAYS_OF_WEEK_ABBR, MONTH_NAMES_ES
+from .constants import DAYS_OF_WEEK, DAYS_OF_WEEK_ABBR, MONTH_NAMES_ES
 
 
 class CalendarService:
@@ -178,11 +178,11 @@ class CalendarService:
                 day["date"],
                 absent_people,
             )
-            day["label"] = "%s, %d de %s" % (
-                DAYS_OF_WEEK_ABBR[day["date"].weekday()],
+            day["label"] = "%d de %s" % (
                 day["date"].day,
                 MONTH_NAMES_ES[day["date"].month],
             )
+            day["weekday"] = DAYS_OF_WEEK[day["date"].weekday()]
             day["person"] = person
             day["default_person"] = default_person
             day["custom_person"] = custom_person
