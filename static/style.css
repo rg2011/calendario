@@ -1408,14 +1408,14 @@ body {
     padding: 0;
     border: 0;
     border-radius: 0 7px 7px 0;
-    background: var(--accent);
+    background: transparent;
     color: var(--note-icon);
     font-size: 1.1rem;
     cursor: pointer;
 }
 
 .week-note-button:hover {
-    background: var(--accent-hover);
+    background: transparent;
     color: var(--note-icon-hover);
 }
 
