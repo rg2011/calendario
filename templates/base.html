@@ -74,6 +74,27 @@
         });
     })();
     </script>
+    <script>
+    (function() {
+        const minimumHiddenDurationMs = 5_000;
+        let hiddenSince = document.visibilityState === 'hidden' ? Date.now() : null;
+
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'hidden') {
+                hiddenSince = Date.now();
+                return;
+            }
+
+            if (hiddenSince === null) return;
+
+            const hiddenDurationMs = Date.now() - hiddenSince;
+            hiddenSince = null;
+            if (hiddenDurationMs < minimumHiddenDurationMs) return;
+
+            window.location.reload();
+        });
+    })();
+    </script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>
