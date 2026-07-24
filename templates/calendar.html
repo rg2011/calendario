@@ -95,36 +95,7 @@
         </div>
     </div>
 
-    <!-- Modal para seleccionar persona -->
-    <div id="shiftModal" class="shift-modal">
-        <div class="shift-modal-content">
-            <div class="shift-modal-header">
-                <div>
-                    <h3>Editar día</h3>
-                    <p id="shiftModalDate" class="shift-modal-date"></p>
-                    <p id="shiftModalHint" class="shift-modal-hint"></p>
-                </div>
-                <button id="shiftModalClose" class="shift-modal-close" type="button">✕</button>
-            </div>
-            <div class="shift-modal-body">
-                <button class="shift-option person-juanmi" data-person="Juanmi">Juanmi</button>
-                <button class="shift-option person-rafa" data-person="Rafa">Rafa</button>
-                <button class="shift-option person-ana" data-person="Ana">Ana</button>
-                <label class="shift-note-field" for="shiftTagInput">Tags</label>
-                <div class="shift-tag-editor">
-                    <div class="shift-tag-add">
-                        <input id="shiftTagInput" class="shift-tag-input" type="text" placeholder="Añade un tag">
-                        <button id="shiftTagAdd" class="shift-option" type="button">Añadir</button>
-                    </div>
-                    <div id="shiftTags" class="shift-tags" aria-live="polite"></div>
-                </div>
-                <label class="shift-note-field" for="shiftNote">Anotación</label>
-                <textarea id="shiftNote" class="shift-note-input" rows="4" placeholder="Añade una anotación para este día personalizado"></textarea>
-                <button id="shiftOptionSave" class="shift-option shift-option-clear" type="button">Guardar cambios</button>
-                <button id="shiftOptionDelete" class="shift-option shift-option-clear" data-person="clear">Eliminar personalización</button>
-            </div>
-        </div>
-    </div>
+    {% include "_shift_editor_modal.html" %}
 
     <div id="holidayModal" class="shift-modal">
         <div class="shift-modal-content holiday-modal-content">
@@ -143,25 +114,6 @@
 </div>
 
 <script>
-let currentDate = null;
-let currentPerson = null;
-let currentEffectivePerson = null;
-let defaultPerson = null;
-let currentNote = '';
-let currentTags = [];
-let currentAbsentPeople = [];
-let currentIsCustom = false;
-const customShiftApiUrl = {{ url_for('set_custom_shift')|tojson }};
-const modal = document.getElementById('shiftModal');
-const modalDateLabel = document.getElementById('shiftModalDate');
-const modalHintLabel = document.getElementById('shiftModalHint');
-const modalCloseButton = document.getElementById('shiftModalClose');
-const saveButton = document.getElementById('shiftOptionSave');
-const deleteOptionButton = document.getElementById('shiftOptionDelete');
-const shiftNoteInput = document.getElementById('shiftNote');
-const shiftTags = document.getElementById('shiftTags');
-const shiftTagInput = document.getElementById('shiftTagInput');
-const shiftTagAddButton = document.getElementById('shiftTagAdd');
 const holidayModal = document.getElementById('holidayModal');
 const holidayModalDateLabel = document.getElementById('holidayModalDate');
 const holidayModalName = document.getElementById('holidayModalName');
@@ -177,7 +129,7 @@ let swipeStartX = null;
 let swipeStartY = null;
 let swipePointerId = null;
 
-function formatDateLabel(dateString) {
+function formatCalendarDateLabel(dateString) {
     const [year, month, day] = dateString.split('-').map(Number);
     const formattedDate = new Date(year, month - 1, day);
 
@@ -189,114 +141,9 @@ function formatDateLabel(dateString) {
     });
 }
 
-function updateShiftModalSelection() {
-    document.querySelectorAll('.shift-option[data-person]').forEach((button) => {
-        const buttonPerson = button.dataset.person;
-        const isPersonButton = buttonPerson && buttonPerson !== 'clear';
-        const isSelected = buttonPerson === currentPerson;
-        const isUnavailable = isPersonButton && currentAbsentPeople.includes(buttonPerson);
-        if (isPersonButton) {
-            button.textContent = buttonPerson === defaultPerson ? `${buttonPerson} (*)` : buttonPerson;
-        }
-        button.classList.toggle('is-selected', isSelected);
-        button.disabled = isUnavailable;
-        button.classList.toggle('is-disabled', isUnavailable);
-        if (isUnavailable) {
-            button.title = 'Persona ausente en esta fecha';
-        } else {
-            button.removeAttribute('title');
-        }
-    });
-
-    deleteOptionButton.style.display = currentIsCustom ? 'block' : 'none';
-
-    if (!currentIsCustom) {
-        modalHintLabel.textContent = defaultPerson
-            ? `Sin personalización. Valor por defecto: ${defaultPerson}`
-            : 'Sin personalización ni regla por defecto';
-        return;
-    }
-
-    if (!currentPerson) {
-        modalHintLabel.textContent = `Editado solo con nota. Valor aplicado: ${currentEffectivePerson || 'Vacío'}`;
-        return;
-    }
-
-    if (currentPerson === defaultPerson) {
-        modalHintLabel.textContent = `Editado. Coincide con el valor por defecto: ${defaultPerson}`;
-        return;
-    }
-
-    modalHintLabel.textContent = `Editado. Valor por defecto: ${defaultPerson || 'Vacío'}`;
-}
-
-function renderTags() {
-    shiftTags.replaceChildren();
-    currentTags.forEach((tag) => {
-        const tagElement = document.createElement('span');
-        tagElement.className = 'shift-tag';
-        tagElement.textContent = tag;
-
-        const removeButton = document.createElement('button');
-        removeButton.type = 'button';
-        removeButton.className = 'shift-tag-remove';
-        removeButton.textContent = '×';
-        removeButton.setAttribute('aria-label', `Eliminar tag ${tag}`);
-        removeButton.addEventListener('click', () => {
-            currentTags = currentTags.filter((currentTag) => currentTag !== tag);
-            renderTags();
-        });
-        tagElement.appendChild(removeButton);
-        shiftTags.appendChild(tagElement);
-    });
-}
-
-function addTag() {
-    const tag = shiftTagInput.value.trim();
-    if (!tag || currentTags.includes(tag)) {
-        return;
-    }
-    currentTags.push(tag);
-    shiftTagInput.value = '';
-    renderTags();
-}
-
-function openShiftSelector(date, person, effectivePerson, defaultValue, note, tags, absentPeople, isCustom) {
-    currentDate = date;
-    currentPerson = person || null;
-    currentEffectivePerson = effectivePerson || null;
-    defaultPerson = defaultValue || null;
-    currentNote = note || '';
-    currentTags = Array.isArray(tags) ? tags : [];
-    currentAbsentPeople = Array.isArray(absentPeople) ? absentPeople : [];
-    currentIsCustom = isCustom;
-    modal.style.display = 'block';
-    modalDateLabel.textContent = formatDateLabel(date);
-    shiftNoteInput.value = currentNote;
-    shiftTagInput.value = '';
-    renderTags();
-    updateShiftModalSelection();
-}
-
-function closeShiftSelector() {
-    modal.style.display = 'none';
-    modalDateLabel.textContent = '';
-    modalHintLabel.textContent = '';
-    shiftNoteInput.value = '';
-    shiftTagInput.value = '';
-    currentDate = null;
-    currentPerson = null;
-    currentEffectivePerson = null;
-    defaultPerson = null;
-    currentNote = '';
-    currentTags = [];
-    currentAbsentPeople = [];
-    currentIsCustom = false;
-}
-
 function openHolidayModal(date, holidayName) {
     holidayModal.style.display = 'block';
-    holidayModalDateLabel.textContent = formatDateLabel(date);
+    holidayModalDateLabel.textContent = formatCalendarDateLabel(date);
     holidayModalName.textContent = holidayName;
 }
 
@@ -306,49 +153,8 @@ function closeHolidayModal() {
     holidayModalName.textContent = '';
 }
 
-function saveCustomShift(payload) {
-    if (!currentDate) return;
-
-    fetch(customShiftApiUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(Object.assign({
-            shift_date: currentDate,
-        }, payload))
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            location.reload();
-            return;
-        }
-
-        alert(data.error || 'Error al guardar el turno');
-    })
-    .catch(error => console.error('Error:', error));
-}
-
-function saveShiftSelection(person) {
-    saveCustomShift({
-        person: person,
-        note: shiftNoteInput.value,
-        tags: currentTags,
-    });
-}
-
-function saveShiftChanges() {
-    addTag();
-    saveCustomShift({
-        person: currentPerson || '',
-        note: shiftNoteInput.value,
-        tags: currentTags,
-    });
-}
-
 function navigateMonth(url) {
-    if (modal.style.display === 'block' || holidayModal.style.display === 'block') {
+    if (isShiftSelectorOpen() || holidayModal.style.display === 'block') {
         return;
     }
 
@@ -371,7 +177,7 @@ function isInteractiveTarget(target) {
 }
 
 function isModalOpen() {
-    return modal.style.display === 'block' || holidayModal.style.display === 'block';
+    return isShiftSelectorOpen() || holidayModal.style.display === 'block';
 }
 
 function storeSwipeStart(clientX, clientY) {
@@ -434,40 +240,19 @@ document.querySelectorAll('.holiday-trigger').forEach((trigger) => {
     });
 });
 
-document.querySelectorAll('.shift-option[data-person]').forEach((button) => {
-    button.addEventListener('click', function() {
-        saveShiftSelection(this.dataset.person);
-    });
-});
-saveButton.addEventListener('click', saveShiftChanges);
-shiftTagAddButton.addEventListener('click', addTag);
-shiftTagInput.addEventListener('keydown', function(event) {
-    if (event.key === 'Enter') {
-        event.preventDefault();
-        addTag();
-    }
-});
-
 monthSelect.addEventListener('change', navigateToSelectedMonthYear);
 yearSelect.addEventListener('change', navigateToSelectedMonthYear);
 
-modalCloseButton.addEventListener('click', closeShiftSelector);
 holidayModalCloseButton.addEventListener('click', closeHolidayModal);
 
 // Cerrar modal al hacer click fuera
 document.addEventListener('click', function(event) {
-    if (modal.style.display === 'block' && event.target === modal) {
-        closeShiftSelector();
-    }
     if (holidayModal.style.display === 'block' && event.target === holidayModal) {
         closeHolidayModal();
     }
 });
 
 document.addEventListener('keydown', function(event) {
-    if (event.key === 'Escape' && modal.style.display === 'block') {
-        closeShiftSelector();
-    }
     if (event.key === 'Escape' && holidayModal.style.display === 'block') {
         closeHolidayModal();
     }

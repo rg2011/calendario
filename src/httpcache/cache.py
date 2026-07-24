@@ -96,7 +96,11 @@ class HttpCacheState:
                 last_modified = self.last_modified(*version_names, floor=last_modified_floor)
                 etag = self.etag_for(resource_key, *version_names, extra_parts=etag_parts)
 
-                if self.is_not_modified(etag, last_modified):
+                if request.method == "HEAD":
+                    response = make_response(
+                        "", 304 if self.is_not_modified(etag, last_modified) else 200
+                    )
+                elif self.is_not_modified(etag, last_modified):
                     response = make_response("", 304)
                 else:
                     response = make_response(view_func(*args, **kwargs))

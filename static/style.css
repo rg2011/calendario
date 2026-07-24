@@ -1414,6 +1414,37 @@ body {
     cursor: pointer;
 }
 
+.week-edit-button {
+    display: grid;
+    place-items: center;
+    grid-column: 2;
+    padding: 0;
+    border: 0;
+    border-radius: 0 7px 7px 0;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.week-edit-button.has-note {
+    color: var(--note-icon);
+}
+
+.week-edit-button:hover {
+    background: transparent;
+    color: var(--text-main);
+}
+
+.week-edit-button.has-note:hover {
+    color: var(--note-icon-hover);
+}
+
+.week-edit-button:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+
 .week-note-button:hover {
     background: transparent;
     color: var(--note-icon-hover);
@@ -1436,10 +1467,40 @@ body {
 }
 
 .week-note-modal-text {
+    margin: 0;
+    padding: 0.75rem;
+    border: 1px solid var(--field-border);
+    border-radius: 6px;
+    background: var(--surface-muted);
     color: var(--text-main);
     line-height: 1.5;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+}
+
+.week-easy-note-modal-text {
+    font-size: 1.2rem;
+}
+
+.week-note-modal-close {
+    width: 100%;
+    padding: 0.7rem 1rem;
+    border: 1px solid var(--field-border);
+    border-radius: 6px;
+    background: var(--surface-muted);
+    color: var(--text-main);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.week-note-modal-close:hover {
+    background: var(--field-bg);
+}
+
+.week-note-modal-close:focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
 }
 
 .week-day[data-person="Juanmi"] .week-day-person {
@@ -1731,6 +1792,10 @@ body {
 
     .week-note-button {
         font-size: 1rem;
+    }
+
+    .week-edit-button {
+        font-size: 0.95rem;
     }
 }
 

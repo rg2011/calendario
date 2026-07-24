@@ -18,7 +18,7 @@
             <div class="week-layout">
                 {% for day in days %}
                 {% set note_text = (day.note or '')|trim %}
-                <article class="week-day{% if can_write and note_text %} has-note{% endif %}"
+                <article class="week-day{% if can_write and (not easy_mode or note_text) %} has-note{% endif %}"
                     data-person="{{ day.person }}"
                     data-date="{{ day.date }}">
                     <div class="week-day-content">
@@ -36,8 +36,24 @@
                         </div>
                         {% endif %}
                     </div>
-                    {% if can_write and note_text %}
+                    {% if easy_mode and can_write and note_text %}
                     <button class="week-note-button" type="button" data-note="{{ note_text }}" data-note-date="{{ day.label }}" aria-label="Ver nota de {{ day.label }}" title="Ver nota">
+                        <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
+                    </button>
+                    {% elif not easy_mode and can_write %}
+                    <button
+                        class="week-edit-button{% if note_text %} has-note{% endif %}"
+                        type="button"
+                        data-date="{{ day.date.isoformat() }}"
+                        data-current-person="{{ day.custom_person or '' }}"
+                        data-effective-person="{{ day.person or '' }}"
+                        data-default-person="{{ day.default_person or '' }}"
+                        data-note="{{ day.note or '' }}"
+                        data-tags='{{ day.tags|tojson }}'
+                        data-absent-people='{{ day.absent_people|tojson }}'
+                        data-is-custom="{{ 'true' if day.is_custom else 'false' }}"
+                        aria-label="Editar {{ day.label }}"
+                        title="Editar día">
                         <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
                     </button>
                     {% endif %}
@@ -65,6 +81,10 @@
     </section>
 </div>
 
+{% if can_write and not easy_mode %}
+{% include "_shift_editor_modal.html" %}
+{% endif %}
+
 <div id="weekNoteModal" class="shift-modal week-note-modal" role="dialog" aria-modal="true" aria-labelledby="weekNoteModalTitle">
     <div class="shift-modal-content week-note-modal-content" tabindex="-1">
         <div class="shift-modal-header">
@@ -74,7 +94,10 @@
             </div>
         </div>
         <div class="shift-modal-body">
-            <p id="weekNoteModalText" class="week-note-modal-text"></p>
+            <p id="weekNoteModalText" class="week-note-modal-text{% if easy_mode %} week-easy-note-modal-text{% endif %}"></p>
+            {% if easy_mode %}
+            <button class="week-note-modal-close" type="button">Cerrar</button>
+            {% endif %}
         </div>
     </div>
 </div>
@@ -94,6 +117,7 @@ const weekNoteModalContent = weekNoteModal.querySelector('.week-note-modal-conte
 const weekNoteModalDate = document.getElementById('weekNoteModalDate');
 const weekNoteModalText = document.getElementById('weekNoteModalText');
 const weekNoteButtons = [...document.querySelectorAll('.week-note-button')];
+const weekEditButtons = [...document.querySelectorAll('.week-edit-button')];
 const tabs = [weekTab, dialingTab, extraContactsTab];
 const panels = [weekPanel, dialingPanel, extraContactsPanel];
 const swipeSurface = document.querySelector('.container');
@@ -332,6 +356,20 @@ dialingTab.addEventListener('click', () => showPanel(1));
 extraContactsTab.addEventListener('click', () => showPanel(2));
 weekNoteButtons.forEach((button) => {
     button.addEventListener('click', () => openWeekNoteModal(button.dataset.note, button.dataset.noteDate));
+});
+weekEditButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+        openShiftSelector(
+            button.dataset.date,
+            button.dataset.currentPerson,
+            button.dataset.effectivePerson,
+            button.dataset.defaultPerson,
+            button.dataset.note,
+            JSON.parse(button.dataset.tags || '[]'),
+            JSON.parse(button.dataset.absentPeople || '[]'),
+            button.dataset.isCustom === 'true'
+        );
+    });
 });
 weekNoteModal.addEventListener('click', closeWeekNoteModal);
 renderExtraContacts();

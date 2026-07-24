@@ -1,0 +1,227 @@
+<div id="shiftModal" class="shift-modal" role="dialog" aria-modal="true" aria-labelledby="shiftModalTitle">
+    <div class="shift-modal-content">
+        <div class="shift-modal-header">
+            <div>
+                <h3 id="shiftModalTitle">Editar día</h3>
+                <p id="shiftModalDate" class="shift-modal-date"></p>
+                <p id="shiftModalHint" class="shift-modal-hint"></p>
+            </div>
+            <button id="shiftModalClose" class="shift-modal-close" type="button" aria-label="Cerrar">✕</button>
+        </div>
+        <div class="shift-modal-body">
+            {% for person in people %}
+            <button class="shift-option person-{{ person|lower }}" data-person="{{ person }}">{{ person }}</button>
+            {% endfor %}
+            <label class="shift-note-field" for="shiftTagInput">Tags</label>
+            <div class="shift-tag-editor">
+                <div class="shift-tag-add">
+                    <input id="shiftTagInput" class="shift-tag-input" type="text" placeholder="Añade un tag">
+                    <button id="shiftTagAdd" class="shift-option" type="button">Añadir</button>
+                </div>
+                <div id="shiftTags" class="shift-tags" aria-live="polite"></div>
+            </div>
+            <label class="shift-note-field" for="shiftNote">Anotación</label>
+            <textarea id="shiftNote" class="shift-note-input" rows="4" placeholder="Añade una anotación para este día personalizado"></textarea>
+            <button id="shiftOptionSave" class="shift-option shift-option-clear" type="button">Guardar cambios</button>
+            <button id="shiftOptionDelete" class="shift-option shift-option-clear" data-person="clear">Eliminar personalización</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentShiftDate = null;
+let currentShiftPerson = null;
+let currentShiftEffectivePerson = null;
+let currentShiftDefaultPerson = null;
+let currentShiftTags = [];
+let currentShiftAbsentPeople = [];
+let currentShiftIsCustom = false;
+const customShiftApiUrl = {{ url_for('set_custom_shift')|tojson }};
+const shiftModal = document.getElementById('shiftModal');
+const shiftModalDateLabel = document.getElementById('shiftModalDate');
+const shiftModalHintLabel = document.getElementById('shiftModalHint');
+const shiftModalCloseButton = document.getElementById('shiftModalClose');
+const shiftSaveButton = document.getElementById('shiftOptionSave');
+const shiftDeleteButton = document.getElementById('shiftOptionDelete');
+const shiftNoteInput = document.getElementById('shiftNote');
+const shiftTags = document.getElementById('shiftTags');
+const shiftTagInput = document.getElementById('shiftTagInput');
+const shiftTagAddButton = document.getElementById('shiftTagAdd');
+
+function formatShiftDateLabel(dateString) {
+    const [year, month, day] = dateString.split('-').map(Number);
+    const formattedDate = new Date(year, month - 1, day);
+
+    return formattedDate.toLocaleDateString('es-ES', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric'
+    });
+}
+
+function updateShiftModalSelection() {
+    shiftModal.querySelectorAll('.shift-option[data-person]').forEach((button) => {
+        const buttonPerson = button.dataset.person;
+        const isPersonButton = buttonPerson && buttonPerson !== 'clear';
+        const isSelected = buttonPerson === currentShiftPerson;
+        const isUnavailable = isPersonButton && currentShiftAbsentPeople.includes(buttonPerson);
+        if (isPersonButton) {
+            button.textContent = buttonPerson === currentShiftDefaultPerson ? `${buttonPerson} (*)` : buttonPerson;
+        }
+        button.classList.toggle('is-selected', isSelected);
+        button.disabled = isUnavailable;
+        button.classList.toggle('is-disabled', isUnavailable);
+        if (isUnavailable) {
+            button.title = 'Persona ausente en esta fecha';
+        } else {
+            button.removeAttribute('title');
+        }
+    });
+
+    shiftDeleteButton.style.display = currentShiftIsCustom ? 'block' : 'none';
+
+    if (!currentShiftIsCustom) {
+        shiftModalHintLabel.textContent = currentShiftDefaultPerson
+            ? `Sin personalización. Valor por defecto: ${currentShiftDefaultPerson}`
+            : 'Sin personalización ni regla por defecto';
+        return;
+    }
+
+    if (!currentShiftPerson) {
+        shiftModalHintLabel.textContent = `Editado solo con nota. Valor aplicado: ${currentShiftEffectivePerson || 'Vacío'}`;
+        return;
+    }
+
+    if (currentShiftPerson === currentShiftDefaultPerson) {
+        shiftModalHintLabel.textContent = `Editado. Coincide con el valor por defecto: ${currentShiftDefaultPerson}`;
+        return;
+    }
+
+    shiftModalHintLabel.textContent = `Editado. Valor por defecto: ${currentShiftDefaultPerson || 'Vacío'}`;
+}
+
+function renderShiftTags() {
+    shiftTags.replaceChildren();
+    currentShiftTags.forEach((tag) => {
+        const tagElement = document.createElement('span');
+        tagElement.className = 'shift-tag';
+        tagElement.textContent = tag;
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'shift-tag-remove';
+        removeButton.textContent = '×';
+        removeButton.setAttribute('aria-label', `Eliminar tag ${tag}`);
+        removeButton.addEventListener('click', () => {
+            currentShiftTags = currentShiftTags.filter((currentTag) => currentTag !== tag);
+            renderShiftTags();
+        });
+        tagElement.appendChild(removeButton);
+        shiftTags.appendChild(tagElement);
+    });
+}
+
+function addShiftTag() {
+    const tag = shiftTagInput.value.trim();
+    if (!tag || currentShiftTags.includes(tag)) {
+        return;
+    }
+    currentShiftTags.push(tag);
+    shiftTagInput.value = '';
+    renderShiftTags();
+}
+
+function openShiftSelector(date, person, effectivePerson, defaultPerson, note, tags, absentPeople, isCustom) {
+    currentShiftDate = date;
+    currentShiftPerson = person || null;
+    currentShiftEffectivePerson = effectivePerson || null;
+    currentShiftDefaultPerson = defaultPerson || null;
+    currentShiftTags = Array.isArray(tags) ? tags : [];
+    currentShiftAbsentPeople = Array.isArray(absentPeople) ? absentPeople : [];
+    currentShiftIsCustom = isCustom;
+    shiftModal.style.display = 'block';
+    shiftModalDateLabel.textContent = formatShiftDateLabel(date);
+    shiftNoteInput.value = note || '';
+    shiftTagInput.value = '';
+    renderShiftTags();
+    updateShiftModalSelection();
+}
+
+function closeShiftSelector() {
+    shiftModal.style.display = 'none';
+    shiftModalDateLabel.textContent = '';
+    shiftModalHintLabel.textContent = '';
+    shiftNoteInput.value = '';
+    shiftTagInput.value = '';
+    currentShiftDate = null;
+    currentShiftPerson = null;
+    currentShiftEffectivePerson = null;
+    currentShiftDefaultPerson = null;
+    currentShiftTags = [];
+    currentShiftAbsentPeople = [];
+    currentShiftIsCustom = false;
+}
+
+function isShiftSelectorOpen() {
+    return shiftModal.style.display === 'block';
+}
+
+function saveCustomShift(payload) {
+    if (!currentShiftDate) return;
+
+    fetch(customShiftApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ shift_date: currentShiftDate }, payload))
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            location.reload();
+            return;
+        }
+
+        alert(data.error || 'Error al guardar el turno');
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function saveShiftSelection(person) {
+    saveCustomShift({ person, note: shiftNoteInput.value, tags: currentShiftTags });
+}
+
+function saveShiftChanges() {
+    addShiftTag();
+    saveCustomShift({
+        person: currentShiftPerson || '',
+        note: shiftNoteInput.value,
+        tags: currentShiftTags,
+    });
+}
+
+shiftModal.querySelectorAll('.shift-option[data-person]').forEach((button) => {
+    button.addEventListener('click', () => saveShiftSelection(button.dataset.person));
+});
+shiftSaveButton.addEventListener('click', saveShiftChanges);
+shiftTagAddButton.addEventListener('click', addShiftTag);
+shiftTagInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        addShiftTag();
+    }
+});
+shiftModalCloseButton.addEventListener('click', closeShiftSelector);
+
+document.addEventListener('click', (event) => {
+    if (isShiftSelectorOpen() && event.target === shiftModal) {
+        closeShiftSelector();
+    }
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && isShiftSelectorOpen()) {
+        closeShiftSelector();
+    }
+});
+</script>
