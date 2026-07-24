@@ -3,17 +3,21 @@
 {% block title %}Semana{% endblock %}
 
 {% block content %}
+{% if easy_mode %}
 <div class="week-tabs" role="tablist" aria-label="Vista de semana">
     <button id="weekTab" class="week-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="weekPanel">Semana</button>
     <button id="dialingTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="dialingPanel">Fijos</button>
     <button id="extraContactsTab" class="week-tab" type="button" role="tab" aria-selected="false" aria-controls="extraContactsPanel" hidden>Móviles</button>
 </div>
+{% endif %}
 {% if not easy_mode %}
 <p class="easy-mode-access"><a href="{{ url_for('easy_mode') }}">Abrir modo sencillo</a></p>
 {% endif %}
 
+{% if easy_mode %}
 <div class="week-tab-panels">
-    <section id="weekPanel" class="week-tab-panel" role="tabpanel" aria-labelledby="weekTab">
+{% endif %}
+    <section id="weekPanel" class="week-tab-panel"{% if easy_mode %} role="tabpanel" aria-labelledby="weekTab"{% endif %}>
         <div class="week-container">
             <div class="week-layout">
                 {% for day in days %}
@@ -63,6 +67,7 @@
         </div>
     </section>
 
+    {% if easy_mode %}
     <section id="dialingPanel" class="week-tab-panel" role="tabpanel" aria-labelledby="dialingTab" hidden>
         <div class="dialing-list">
             {% for shortcut, name in contacts.items() %}
@@ -79,7 +84,10 @@
     <section id="extraContactsPanel" class="week-tab-panel" role="tabpanel" aria-labelledby="extraContactsTab" hidden>
         <div id="extraContactsList" class="dialing-list"></div>
     </section>
+    {% endif %}
+{% if easy_mode %}
 </div>
+{% endif %}
 
 {% if can_write and not easy_mode %}
 {% include "_shift_editor_modal.html" %}
@@ -105,6 +113,14 @@
 
 {% block extra_scripts %}
 <script>
+const weekNoteModal = document.getElementById('weekNoteModal');
+const weekNoteModalContent = weekNoteModal.querySelector('.week-note-modal-content');
+const weekNoteModalDate = document.getElementById('weekNoteModalDate');
+const weekNoteModalText = document.getElementById('weekNoteModalText');
+const weekNoteButtons = [...document.querySelectorAll('.week-note-button')];
+const weekEditButtons = [...document.querySelectorAll('.week-edit-button')];
+
+{% if easy_mode %}
 const weekTab = document.getElementById('weekTab');
 const dialingTab = document.getElementById('dialingTab');
 const extraContactsTab = document.getElementById('extraContactsTab');
@@ -112,12 +128,6 @@ const weekPanel = document.getElementById('weekPanel');
 const dialingPanel = document.getElementById('dialingPanel');
 const extraContactsPanel = document.getElementById('extraContactsPanel');
 const extraContactsList = document.getElementById('extraContactsList');
-const weekNoteModal = document.getElementById('weekNoteModal');
-const weekNoteModalContent = weekNoteModal.querySelector('.week-note-modal-content');
-const weekNoteModalDate = document.getElementById('weekNoteModalDate');
-const weekNoteModalText = document.getElementById('weekNoteModalText');
-const weekNoteButtons = [...document.querySelectorAll('.week-note-button')];
-const weekEditButtons = [...document.querySelectorAll('.week-edit-button')];
 const tabs = [weekTab, dialingTab, extraContactsTab];
 const panels = [weekPanel, dialingPanel, extraContactsPanel];
 const swipeSurface = document.querySelector('.container');
@@ -183,6 +193,7 @@ function resetSwipeStart() {
     swipeStartX = null;
     swipeStartY = null;
 }
+{% endif %}
 
 function isInteractiveTarget(target) {
     return Boolean(target && target.closest('a, button, input, select, textarea'));
@@ -201,6 +212,7 @@ function closeWeekNoteModal() {
     weekNoteModalText.textContent = '';
 }
 
+{% if easy_mode %}
 function getLocalPhoneContacts() {
     try {
         const contacts = JSON.parse(localStorage.getItem(localPhoneContactsKey) || '{}');
@@ -350,10 +362,13 @@ function handleSwipeEnd(clientX, clientY) {
     const nextPosition = (currentPosition + (advances ? 1 : -1) + panelIndexes.length) % panelIndexes.length;
     showTab(panelIndexes[nextPosition], true, advances ? -1 : 1);
 }
+{% endif %}
 
+{% if easy_mode %}
 weekTab.addEventListener('click', () => showPanel(0));
 dialingTab.addEventListener('click', () => showPanel(1));
 extraContactsTab.addEventListener('click', () => showPanel(2));
+{% endif %}
 weekNoteButtons.forEach((button) => {
     button.addEventListener('click', () => openWeekNoteModal(button.dataset.note, button.dataset.noteDate));
 });
@@ -372,6 +387,7 @@ weekEditButtons.forEach((button) => {
     });
 });
 weekNoteModal.addEventListener('click', closeWeekNoteModal);
+{% if easy_mode %}
 renderExtraContacts();
 
 swipeSurface.addEventListener('touchstart', (event) => {
@@ -399,6 +415,7 @@ document.addEventListener('touchend', (event) => {
 }, { passive: true });
 
 document.addEventListener('touchcancel', resetSwipeStart, { passive: true });
+{% endif %}
 
 document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && weekNoteModal.style.display === 'flex') {
